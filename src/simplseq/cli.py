@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import socket
 import subprocess
 import sys
 from pathlib import Path
@@ -168,6 +169,17 @@ def cmd_app(args: argparse.Namespace) -> int:
     if not app.exists():
         print(f"Streamlit app not found: {app}", file=sys.stderr)
         return 1
+    port = find_free_port(args.port)
+    if port is None:
+        print(
+            f"{tag('ERROR', '31')} No free port found from {args.port} to {args.port + 49}.",
+            file=sys.stderr,
+        )
+        print(f"{tag('INFO', '34')} Stop another app or run: simplseq run --port 8600", file=sys.stderr)
+        return 1
+    if port != args.port:
+        print(f"{tag('INFO', '34')} Port {args.port} is busy; using {port} instead.")
+    print(f"{tag('INFO', '34')} Opening SIMPLseq-nf App at http://127.0.0.1:{port}")
     command = [
         sys.executable,
         "-m",
@@ -177,9 +189,21 @@ def cmd_app(args: argparse.Namespace) -> int:
         "--browser.gatherUsageStats=false",
         "--server.headless=true",
         "--server.address=127.0.0.1",
-        "--server.port=8501",
+        f"--server.port={port}",
     ]
     return subprocess.call(command, cwd=root)
+
+
+def find_free_port(start: int, attempts: int = 50) -> int | None:
+    for port in range(start, start + attempts):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+            sock.settimeout(0.2)
+            try:
+                sock.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+            return port
+    return None
 
 
 def add_direct_run_args(parser: argparse.ArgumentParser) -> None:
@@ -212,6 +236,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("run", help="Open the SIMPLseq-nf App browser interface")
+    p.add_argument("--port", type=int, default=8501, help="Preferred local browser port")
     p.set_defaults(func=cmd_app)
 
     p = sub.add_parser("run-headless", help="Run the workflow without the browser GUI")
