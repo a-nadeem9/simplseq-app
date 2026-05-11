@@ -886,7 +886,7 @@ result_report = resolve_project_path(st.session_state.results_outdir) / "reports
 with st.sidebar:
     if LOGO.exists():
         st.image(str(LOGO), width="stretch")
-    st.markdown("### SIMPLseq App")
+    st.markdown("### SIMPLseq-nf App")
     st.caption("Malaria amplicon workflow")
     st.divider()
     render_status_line(
@@ -922,7 +922,7 @@ with hero_left:
         """
         <div class="hero">
           <div>
-            <div class="eyebrow">SIMPLseq App</div>
+            <div class="eyebrow">SIMPLseq-nf App</div>
             <div class="hero-title">From FASTQs to SIMPLseq results</div>
             <div class="hero-copy">
               A quiet browser interface for pairing reads, starting a run, watching progress, and reviewing the report.

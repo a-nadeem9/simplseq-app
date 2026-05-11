@@ -1,6 +1,6 @@
-# SIMPLseq App User Guide
+# SIMPLseq-nf App User Guide
 
-SIMPLseq App is started with one command:
+SIMPLseq-nf App is started with one command:
 
 ```bash
 simplseq run
@@ -27,7 +27,7 @@ internally.
 From Linux or WSL:
 
 ```bash
-curl -fsSL https://github.com/a-nadeem9/simplseq-app/releases/download/v0.1.0-dev/install-simplseq.sh | bash
+curl -fsSL https://github.com/a-nadeem9/simplseq-nf-app/releases/download/v0.1.0-dev/install-simplseq.sh | bash
 ```
 
 After setup, this should work from any new WSL/Linux shell:

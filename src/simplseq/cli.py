@@ -1,4 +1,4 @@
-"""Command line interface for SIMPLseq App."""
+"""Command line interface for SIMPLseq-nf App."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from .samplesheet import scan_fastqs, write_samples_csv
 from . import __version__
 
 
-APP_NAME = "SIMPLseq App"
+APP_NAME = "SIMPLseq-nf App"
 APP_VERSION = f"v{__version__}-dev" if __version__ == "0.1.0" else f"v{__version__}"
 APP_SUBTITLE = "Linux / WSL browser workflow"
 
@@ -112,7 +112,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     if failed:
         print(f"\n{tag('ERROR', '31')} {failed} checks need attention before a full run.")
         return 1
-    print(f"\n{tag('OK', '32')} SIMPLseq App environment looks ready.")
+    print(f"\n{tag('OK', '32')} SIMPLseq-nf App environment looks ready.")
     return 0
 
 
@@ -211,7 +211,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--samples", default=None)
     p.set_defaults(func=cmd_check)
 
-    p = sub.add_parser("run", help="Open the SIMPLseq App browser interface")
+    p = sub.add_parser("run", help="Open the SIMPLseq-nf App browser interface")
     p.set_defaults(func=cmd_app)
 
     p = sub.add_parser("run-headless", help="Run the workflow without the browser GUI")

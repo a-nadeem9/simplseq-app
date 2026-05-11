@@ -2,9 +2,9 @@
 set -euo pipefail
 
 VERSION="${SIMPLSEQ_VERSION:-v0.1.0-dev}"
-TARBALL="simplseq-app-${VERSION}.tar.gz"
+TARBALL="simplseq-nf-app-${VERSION}.tar.gz"
 CHECKSUMS="SHA256SUMS.txt"
-DEFAULT_BASE_URL="https://github.com/a-nadeem9/simplseq-app/releases/download/${VERSION}"
+DEFAULT_BASE_URL="https://github.com/a-nadeem9/simplseq-nf-app/releases/download/${VERSION}"
 BASE_URL="${SIMPLSEQ_INSTALL_BASE_URL:-$DEFAULT_BASE_URL}"
 AUTH_TOKEN="${SIMPLSEQ_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
 
@@ -24,7 +24,7 @@ say() {
 banner() {
   cat <<EOF
 ======================================================
-  >_ SIMPLseq App ${VERSION}
+  >_ SIMPLseq-nf App ${VERSION}
      Linux / WSL browser workflow setup
      Nextflow + Conda/Mamba runtime
 ======================================================
@@ -137,10 +137,10 @@ chmod +x "$BIN_DIR/simplseq"
 
 say "Checking PATH"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-  if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'SIMPLseq App launcher path' "$HOME/.bashrc"; then
+  if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'SIMPLseq-nf App launcher path' "$HOME/.bashrc"; then
     cat >> "$HOME/.bashrc" <<'EOF'
 
-# SIMPLseq App launcher path
+# SIMPLseq-nf App launcher path
 case ":$PATH:" in
   *":$HOME/.local/bin:"*) ;;
   *) export PATH="$HOME/.local/bin:$PATH" ;;
@@ -159,7 +159,7 @@ say "Verifying SIMPLseq"
 
 say "Setup complete"
 cat <<'EOF'
-Start SIMPLseq App with:
+Start SIMPLseq-nf App with:
 
     simplseq run
 EOF

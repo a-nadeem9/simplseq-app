@@ -1,8 +1,8 @@
 ![SIMPLseq logo](assets/simplseq-logo.png)
 
-# SIMPLseq App
+# SIMPLseq-nf App
 
-SIMPLseq App is a browser-based app for running the SIMPLseq malaria
+SIMPLseq-nf App is a browser-based app for running the SIMPLseq malaria
 amplicon workflow.
 
 Start it with:
@@ -15,12 +15,12 @@ This opens a browser interface where the user chooses FASTQ files,
 reviews detected pairs, creates the sample sheet, starts the run, watches
 progress, and downloads results.
 
-Behind the GUI, SIMPLseq App uses a Linux Conda/Mamba runtime and a local
+Behind the GUI, SIMPLseq-nf App uses a Linux Conda/Mamba runtime and a local
 Nextflow pipeline.
 
 ## Direction
 
-SIMPLseq App is GUI-first and CLI-backed.
+SIMPLseq-nf App is GUI-first and CLI-backed.
 
 ```text
 simplseq run
@@ -61,7 +61,7 @@ authors.
 On Linux/WSL:
 
 ```bash
-curl -fsSL https://github.com/a-nadeem9/simplseq-app/releases/download/v0.1.0-dev/install-simplseq.sh | bash
+curl -fsSL https://github.com/a-nadeem9/simplseq-nf-app/releases/download/v0.1.0-dev/install-simplseq.sh | bash
 simplseq run
 ```
 

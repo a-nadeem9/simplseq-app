@@ -1,4 +1,4 @@
-"""Local Nextflow runner for SIMPLseq App."""
+"""Local Nextflow runner for SIMPLseq-nf App."""
 
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ def run_probe(
 
 def check_environment(root: Path, samples: Path | None = None, *, profile: str = "local") -> list[dict[str, str]]:
     if profile != "local":
-        raise ValueError("SIMPLseq App currently supports the local Conda/Nextflow runtime only")
+        raise ValueError("SIMPLseq-nf App currently supports the local Conda/Nextflow runtime only")
     checks: list[dict[str, str]] = []
     env = local_runtime_env(root)
     command_checks = [("Python", "python"), ("Rscript", "Rscript"), ("MUSCLE", "muscle")]
@@ -266,7 +266,7 @@ def run_nextflow(
         nextflow_profile=profile,
         technical_log=str(technical_log),
     )
-    emit_event(progress_file, "run", "started", message="Starting SIMPLseq App run")
+    emit_event(progress_file, "run", "started", message="Starting SIMPLseq-nf App run")
 
     command = [
         "nextflow",
@@ -309,7 +309,7 @@ def run_nextflow(
         return RunResult(0, command, technical_log)
 
     if profile != "local":
-        raise ValueError("SIMPLseq App currently supports the local Conda/Nextflow runtime only")
+        raise ValueError("SIMPLseq-nf App currently supports the local Conda/Nextflow runtime only")
 
     env = local_runtime_env(root)
     env["NXF_HOME"] = str(outdir / ".nextflow")
@@ -351,7 +351,7 @@ def run_nextflow(
         returncode = process.wait()
 
     status = "complete" if returncode == 0 else "failed"
-    emit_event(progress_file, "run", status, message="SIMPLseq App run finished")
+    emit_event(progress_file, "run", status, message="SIMPLseq-nf App run finished")
     legacy_technical_log.write_text(technical_log.read_text(encoding="utf-8", errors="replace"), encoding="utf-8")
     completed_at = utc_now()
     write_state(
