@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">SIMPLseq favicon</title>
+  <desc id="desc">A hollow circle favicon with six colored border segments for the SIMPLseq loci.</desc>
+  <g fill="none" stroke-linecap="butt" stroke-width="20">
+    <path d="M 64.00 22.00 A 42 42 0 0 1 100.37 43.00" stroke="#e8b400"/>
+    <path d="M 100.37 43.00 A 42 42 0 0 1 100.37 85.00" stroke="#14923a"/>
+    <path d="M 100.37 85.00 A 42 42 0 0 1 64.00 106.00" stroke="#d8c4d8"/>
+    <path d="M 64.00 106.00 A 42 42 0 0 1 27.63 85.00" stroke="#2b9fe3"/>
+    <path d="M 27.63 85.00 A 42 42 0 0 1 27.63 43.00" stroke="#e5007d"/>
+    <path d="M 27.63 43.00 A 42 42 0 0 1 64.00 22.00" stroke="#00b8a9"/>
+  </g>
+</svg>

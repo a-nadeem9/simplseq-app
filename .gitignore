@@ -1,0 +1,50 @@
+# Local environments
+.venv/
+.venv-*/
+__pycache__/
+*.pyc
+
+# SIMPLseq release/runtime artifacts
+dist/
+*.tar.gz
+*.tgz
+simplseq_v1.tgz
+simplseq_release_*.tgz
+simplseq_apptainer_cli_*.tgz
+simplseq_cli_portable_*.tgz
+containers/*.sif
+.simplseq/
+release_artifacts/
+
+# Local build and verification folders
+release_build*/
+release_java_cache/
+tmp*/
+test_results/
+logs/
+
+# Pipeline outputs and scratch
+results*/
+outputs/
+work/
+.nextflow*
+.nextflow/
+.nextflow.log*
+
+# Input data should stay local unless explicitly using tiny fixtures
+data/*
+!data/.gitkeep
+*.fastq
+*.fastq.gz
+*.fq
+*.fq.gz
+*.md5
+
+# Generated run metadata/logs
+run_state.json
+progress.jsonl
+technical_log.txt
+
+# OS/editor noise
+.DS_Store
+Thumbs.db

@@ -1,0 +1,31 @@
+name: simplseq
+channels:
+  - conda-forge
+  - bioconda
+  - nodefaults
+dependencies:
+  - python=3.11
+  - openjdk=17
+  - nextflow
+  - streamlit
+  - pandas
+  - biopython
+  - cutadapt
+  - trim-galore
+  - muscle
+  - bbmap
+  - seqkit
+  - r-base
+  - r-argparse
+  - r-data.table
+  - r-seqinr
+  - r-stringr
+  - r-domc
+  - bioconductor-limma
+  - bioconductor-dada2
+  - bioconductor-biostrings
+  - bioconductor-pwalign
+  - pip
+  - pip:
+      - -e .
+
