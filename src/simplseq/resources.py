@@ -107,9 +107,14 @@ def resource_checks(samples: Path | None, outdir: Path) -> list[dict[str, str]]:
             "detail": str(snap.cpu_count),
         },
         {
-            "name": "RAM",
+            "name": "Setup RAM check",
             "status": "ok" if snap.memory_bytes >= 8 * 1024**3 else "warn",
-            "detail": human_bytes(snap.memory_bytes) if snap.memory_bytes else "unknown",
+            "detail": f"{human_bytes(snap.memory_bytes)} available" if snap.memory_bytes else "unknown",
+        },
+        {
+            "name": "Large/high-depth datasets",
+            "status": "warn",
+            "detail": "may require much more RAM",
         },
         {
             "name": "Output disk",
