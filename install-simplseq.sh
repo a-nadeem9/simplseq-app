@@ -42,6 +42,7 @@ case "$UNAME_S" in
   Linux)
     PLATFORM_LABEL="Linux / WSL"
     MAMBA_SUBDIR="linux-64"
+    CONDA_PLATFORM="${SIMPLSEQ_CONDA_PLATFORM:-linux-64}"
     PROFILE_FILE="${HOME}/.bashrc"
     SHA256_CHECK=(sha256sum -c)
     ;;
@@ -50,8 +51,14 @@ case "$UNAME_S" in
     PROFILE_FILE="${HOME}/.zshrc"
     SHA256_CHECK=(shasum -a 256 -c)
     case "$UNAME_M" in
-      arm64) MAMBA_SUBDIR="osx-arm64" ;;
-      x86_64) MAMBA_SUBDIR="osx-64" ;;
+      arm64)
+        MAMBA_SUBDIR="osx-arm64"
+        CONDA_PLATFORM="${SIMPLSEQ_CONDA_PLATFORM:-osx-64}"
+        ;;
+      x86_64)
+        MAMBA_SUBDIR="osx-64"
+        CONDA_PLATFORM="${SIMPLSEQ_CONDA_PLATFORM:-osx-64}"
+        ;;
       *) fail "Unsupported macOS CPU architecture: $UNAME_M" ;;
     esac
     ;;
@@ -124,9 +131,17 @@ touch "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 banner
-echo "Platform: $PLATFORM_LABEL ($MAMBA_SUBDIR)"
+echo "Platform: $PLATFORM_LABEL ($UNAME_M)"
+echo "Micromamba platform: $MAMBA_SUBDIR"
+echo "Conda package platform: $CONDA_PLATFORM"
 echo "Base URL: $BASE_URL"
 echo "Install log: $LOG_FILE"
+
+if [[ "$UNAME_S" == "Darwin" && "$UNAME_M" == "arm64" && "$CONDA_PLATFORM" == "osx-64" ]]; then
+  if ! /usr/bin/arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
+    fail "Apple Silicon macOS installs use the Intel conda runtime for DADA2. Install Rosetta first: softwareupdate --install-rosetta --agree-to-license"
+  fi
+fi
 
 say "Downloading release files"
 fetch_asset "$TARBALL" "$CACHE_DIR/$TARBALL"
@@ -175,9 +190,9 @@ if [[ "$UNAME_S" == "Linux" && -f "$LOCK_FILE" && "${SIMPLSEQ_USE_LOCK:-1}" != "
   "$ENV_DIR/bin/python" -m pip install -e "$VERSION_DIR"
 else
   if [[ -x "$ENV_DIR/bin/python" ]]; then
-    "$MICROMAMBA" install -y -p "$ENV_DIR" -f "$VERSION_DIR/environment.yml"
+    "$MICROMAMBA" install -y --platform "$CONDA_PLATFORM" -p "$ENV_DIR" -f "$VERSION_DIR/environment.yml"
   else
-    "$MICROMAMBA" create -y -p "$ENV_DIR" -f "$VERSION_DIR/environment.yml"
+    "$MICROMAMBA" create -y --platform "$CONDA_PLATFORM" -p "$ENV_DIR" -f "$VERSION_DIR/environment.yml"
   fi
 fi
 
