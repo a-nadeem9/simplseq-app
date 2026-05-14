@@ -1,9 +1,6 @@
 name: Release
 
 on:
-  push:
-    tags:
-      - "v*"
   workflow_dispatch:
     inputs:
       version:
@@ -47,7 +44,7 @@ jobs:
         shell: bash
         run: |
           version="${{ steps.version.outputs.version }}"
-          notes="SIMPLseq-nf App ${version} development release.
+          notes="SIMPLseq-nf App ${version} release.
 
 Install on Linux, WSL, or macOS:
 
@@ -68,6 +65,5 @@ simplseq run
               "release_artifacts/${version}/simplseq-nf-app-${version}.tar.gz" \
               "release_artifacts/${version}/SHA256SUMS.txt" \
               --title "$version" \
-              --notes "$notes" \
-              --prerelease
+              --notes "$notes"
           fi
