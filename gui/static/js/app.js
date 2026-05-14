@@ -99,7 +99,6 @@ function syncPathTitles() {
 function saveSettings() {
   normalizePathInputs();
   const settings = {
-    activeTab: document.querySelector(".tab.is-active")?.dataset.tab || "inputs",
     fastqDir: $("#fastq-dir").value,
     samplesOut: $("#samples-out").value,
     runSamples: $("#run-samples").value,
@@ -508,11 +507,13 @@ async function chooseFastqFolder() {
 function renderStages(events, summary, state) {
   const statusByStage = {};
   const messageByStage = {};
+  const staleState = state?.status === "stale";
   STAGES.forEach((stage) => {
     statusByStage[stage] = "pending";
   });
   events.forEach((event) => {
     if (!STAGES.includes(event.stage)) return;
+    if (staleState && ["started", "running"].includes(event.status)) return;
     statusByStage[event.stage] = event.status;
     if (event.message) messageByStage[event.stage] = event.message;
   });
@@ -599,9 +600,8 @@ function renderStages(events, summary, state) {
   if (runStatus === "dry_run") currentLabel = "Preview ready";
   if (runStatus === "complete") currentLabel = "Run complete";
   if (runStatus === "failed") currentLabel = "Run failed";
+  if (runStatus === "stale") currentLabel = "Check run status";
   text($("#current-stage"), currentLabel);
-  const spinner = $("#terminal-spinner");
-  if (spinner) spinner.hidden = !isActiveStatus(runStatus);
 }
 
 function renderStatus(payload) {
@@ -611,7 +611,7 @@ function renderStatus(payload) {
   let pillStatus = "";
   if (status === "complete" || status === "dry_run") pillStatus = "ok";
   if (status === "failed") pillStatus = "bad";
-  if (status === "running" || status === "starting") pillStatus = "warn";
+  if (status === "running" || status === "starting") pillStatus = "ok";
   setPill($("#run-state-pill"), status, pillStatus);
   $("#run-button").disabled = Boolean(payload.active && !$("#dry-run").checked);
 }
@@ -825,11 +825,13 @@ async function refreshAllRunState() {
       clearInterval(pollTimer);
       pollTimer = null;
     }
+    return status;
   } catch (_error) {
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
     }
+    return null;
   }
 }
 
@@ -1018,15 +1020,15 @@ function bindEvents() {
 async function init() {
   restoreSettings();
   bindEvents();
-  const settings = getSettings();
-  if (settings.activeTab) selectTab(settings.activeTab);
+  selectTab("inputs");
   text($("#run-button"), $("#dry-run").checked ? "Preview command" : "Start run");
   try {
     await loadHealth();
   } catch (_error) {
     renderCommonPaths([]);
   }
-  await refreshAllRunState();
+  const status = await refreshAllRunState();
+  if (status?.active) selectTab("run");
 }
 
 init();

@@ -578,7 +578,7 @@ def create_app(root: Path | None = None, workspace_root: Path | None = None) -> 
         dry_run = bool_payload(data, "dry_run", False)
         if not samples.exists() and not dry_run:
             return json_error(f"Sample sheet not found: {samples}", 400)
-        if active_state(outdir) or process_active(outdir):
+        if process_active(outdir):
             return json_error("A SIMPLseq run is already active for this output folder.", 409, outdir=str(outdir))
         try:
             process = start_run_process(app_root, samples, outdir, data)
@@ -600,13 +600,20 @@ def create_app(root: Path | None = None, workspace_root: Path | None = None) -> 
         outdir = resolve_app_path(workspace, request.args.get("out"), "results")
         state = read_json(outdir / "run_state.json")
         summary = progress_summary(outdir)
+        tracked_active = process_active(outdir)
+        if active_state(outdir) and not tracked_active:
+            state = dict(state)
+            state["status"] = "stale"
+            state.setdefault("detail", "The previous run state is not attached to this app session.")
+            summary = dict(summary)
+            summary["status"] = "stale"
         return jsonify(
             {
                 "ok": True,
                 "outdir": str(outdir),
                 "state": state,
                 "summary": summary,
-                "active": active_state(outdir) or process_active(outdir),
+                "active": tracked_active,
             }
         )
 
