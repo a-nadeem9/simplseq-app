@@ -144,7 +144,7 @@ def check_environment(
     checks.append({"name": "Nextflow", "status": "ok" if nextflow else "missing", "detail": nextflow or "nextflow not found"})
     checks.extend(
         [
-            run_probe("Python packages", ["python", "-c", "import pandas; print('pandas ok')"], env),
+            run_probe("Python packages", ["python", "-c", "import pandas; print('pandas ok')"], env, timeout=120),
             run_probe("Java works", ["java", "-version"], env),
             run_probe("Nextflow works", ["nextflow", "-version"], env),
             run_probe("DADA2 loads", ["Rscript", "-e", "suppressPackageStartupMessages(library(dada2)); cat(as.character(packageVersion('dada2')))"], env, timeout=60),
