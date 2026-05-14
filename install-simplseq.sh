@@ -16,6 +16,7 @@ LOG_DIR="${SIMPLSEQ_HOME}/logs"
 BIN_DIR="${HOME}/.local/bin"
 LOG_FILE="${LOG_DIR}/install-${VERSION}.log"
 MICROMAMBA="${SIMPLSEQ_HOME}/bin/micromamba"
+REUSE_ENV="${SIMPLSEQ_REUSE_ENV:-0}"
 UNAME_S="$(uname -s)"
 UNAME_M="$(uname -m)"
 
@@ -136,6 +137,11 @@ echo "Micromamba platform: $MAMBA_SUBDIR"
 echo "Conda package platform: $CONDA_PLATFORM"
 echo "Base URL: $BASE_URL"
 echo "Install log: $LOG_FILE"
+if [[ "$REUSE_ENV" == "1" ]]; then
+  echo "Runtime mode: reuse existing managed environment when present"
+else
+  echo "Runtime mode: recreate managed environment for a clean install"
+fi
 
 if [[ "$UNAME_S" == "Darwin" && "$UNAME_M" == "arm64" && "$CONDA_PLATFORM" == "osx-64" ]]; then
   if ! /usr/bin/arch -x86_64 /usr/bin/true >/dev/null 2>&1; then
@@ -180,6 +186,10 @@ export MAMBA_ROOT_PREFIX="${SIMPLSEQ_HOME}/mamba_root"
 export CONDA_PKGS_DIRS="${SIMPLSEQ_HOME}/pkgs"
 mkdir -p "$MAMBA_ROOT_PREFIX" "$CONDA_PKGS_DIRS"
 cd "$VERSION_DIR"
+if [[ -d "$ENV_DIR" && "$REUSE_ENV" != "1" ]]; then
+  echo "Removing existing managed runtime at $ENV_DIR"
+  "$MICROMAMBA" remove -y -p "$ENV_DIR" --all || rm -rf "$ENV_DIR"
+fi
 LOCK_FILE="$VERSION_DIR/locks/linux-64-explicit.txt"
 if [[ "$UNAME_S" == "Linux" && -f "$LOCK_FILE" && "${SIMPLSEQ_USE_LOCK:-1}" != "0" ]]; then
   if [[ -x "$ENV_DIR/bin/python" ]]; then

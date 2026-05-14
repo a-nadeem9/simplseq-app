@@ -7,7 +7,6 @@ import importlib.util
 import json
 import os
 import socket
-import subprocess
 import sys
 from pathlib import Path
 
@@ -126,7 +125,7 @@ def cmd_run_direct(args: argparse.Namespace) -> int:
     result = run_nextflow(
         user_path(args.samples),
         user_path(args.out),
-        profile="local",
+        profile=args.profile,
         resume=not args.no_resume,
         work_dir=user_path(args.work_dir) if args.work_dir else None,
         dry_run=args.dry_run,
@@ -169,13 +168,13 @@ def cmd_results(args: argparse.Namespace) -> int:
 
 
 def cmd_app(args: argparse.Namespace) -> int:
-    ui = args.ui or os.environ.get("SIMPLSEQ_UI", "flask")
-    if ui == "streamlit":
-        return cmd_streamlit_app(args)
     return cmd_flask_app(args)
 
 
 def cmd_flask_app(args: argparse.Namespace) -> int:
+    if args.host not in {"127.0.0.1", "localhost", "::1"}:
+        print(f"{tag('ERROR', '31')} SIMPLseq-nf App only serves the browser UI on a loopback host.", file=sys.stderr)
+        return 1
     root = project_root()
     app = root / "gui" / "flask_app.py"
     if not app.exists():
@@ -206,37 +205,6 @@ def cmd_flask_app(args: argparse.Namespace) -> int:
     return int(module.run_server(root=root, host=args.host, port=port, open_browser=not args.no_browser))
 
 
-def cmd_streamlit_app(args: argparse.Namespace) -> int:
-    root = project_root()
-    app = root / "gui" / "streamlit_app.py"
-    if not app.exists():
-        print(f"Streamlit app not found: {app}", file=sys.stderr)
-        return 1
-    port = find_free_port(args.port)
-    if port is None:
-        print(
-            f"{tag('ERROR', '31')} No free port found from {args.port} to {args.port + 49}.",
-            file=sys.stderr,
-        )
-        print(f"{tag('INFO', '34')} Stop another app or run: simplseq run --port 8600", file=sys.stderr)
-        return 1
-    if port != args.port:
-        print(f"{tag('INFO', '34')} Port {args.port} is busy; using {port} instead.")
-    print(f"{tag('INFO', '34')} Opening SIMPLseq-nf App at http://127.0.0.1:{port}")
-    command = [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        str(app),
-        "--browser.gatherUsageStats=false",
-        "--server.headless=true",
-        "--server.address=127.0.0.1",
-        f"--server.port={port}",
-    ]
-    return subprocess.call(command, cwd=root)
-
-
 def find_free_port(start: int, attempts: int = 50) -> int | None:
     for port in range(start, start + attempts):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
@@ -252,6 +220,7 @@ def find_free_port(start: int, attempts: int = 50) -> int | None:
 def add_direct_run_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--samples", required=True)
     parser.add_argument("--out", "--outdir", dest="out", default="results")
+    parser.add_argument("--profile", choices=["local", "reproducible"], default="local")
     parser.add_argument("--work-dir", default="")
     parser.add_argument("--cpus", type=int, default=0, help="CPUs for heavy local stages")
     parser.add_argument("--memory", default="", help="Memory for heavy local stages, e.g. '12 GB'")
@@ -283,7 +252,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, default=8501, help="Preferred local browser port")
     p.add_argument("--host", default="127.0.0.1", help=argparse.SUPPRESS)
     p.add_argument("--no-browser", action="store_true", help=argparse.SUPPRESS)
-    p.add_argument("--ui", choices=["flask", "streamlit"], default=None, help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_app)
 
     p = sub.add_parser("run-headless", help="Run the workflow without the browser GUI")

@@ -5,6 +5,11 @@
 *.config text eol=lf
 *.py text eol=lf
 *.R text eol=lf
+*.toml text eol=lf
+*.json text eol=lf
+*.html text eol=lf
+*.css text eol=lf
+*.js text eol=lf
 *.fa text eol=lf
 *.fasta text eol=lf
 *.txt text eol=lf

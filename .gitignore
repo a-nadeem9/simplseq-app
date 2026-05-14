@@ -25,6 +25,7 @@ tmp*/
 tmp*.log
 test_results/
 logs/
+ui_snapshots/
 
 # Pipeline outputs and scratch
 results*/

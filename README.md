@@ -76,6 +76,9 @@ The installer downloads the app files, creates a managed Micromamba runtime
 under `~/.local/share/simplseq`, and installs a `simplseq` launcher into
 `~/.local/bin`. Users do not need to activate an environment manually; the
 launcher sets the project root, Python path, and runtime path internally.
+Reinstalling the same version recreates that managed runtime by default so old
+packages cannot linger after dependency changes. Set `SIMPLSEQ_REUSE_ENV=1` to
+reuse the existing runtime intentionally.
 
 On Linux/WSL, the installer uses the pinned `locks/linux-64-explicit.txt`
 runtime lock when it is present. Set `SIMPLSEQ_USE_LOCK=0` to force a fresh
@@ -100,11 +103,10 @@ Build the release assets locally:
 scripts/build_release.sh
 ```
 
-The GitHub Actions workflows provide the end-user test path:
+The GitHub Actions workflow provides the end-user test path:
 
-- `Release` builds the tarball/checksum and uploads them to a GitHub Release.
-- `Installer smoke` installs from those release-shaped assets on Linux and
-  macOS runners.
+- `Installer smoke` builds release-shaped tarball/checksum assets, installs
+  them on Linux, and can also install them on macOS runners.
 
 The macOS workflow is the first real gate for macOS support. A passing workflow
 means the installer can fetch the app, create the Micromamba runtime, run the
@@ -182,11 +184,15 @@ Backend/developer commands:
 simplseq scan --fastq-dir data --out samples.csv
 simplseq check --samples samples.csv
 simplseq run-headless --samples samples.csv --out results
+simplseq run-headless --samples samples.csv --out results --profile reproducible
 simplseq results --out results
 ```
 
 These are useful for testing, debugging, automation, support, and developer
 mode. They are not the normal wet-lab user path.
+
+Use `--profile reproducible` when byte-for-byte reproducibility is more
+important than maximum local DADA2 throughput.
 
 ## Outputs
 
