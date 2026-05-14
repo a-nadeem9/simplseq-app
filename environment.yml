@@ -8,7 +8,6 @@ dependencies:
   - openjdk=17
   - nextflow
   - flask
-  - streamlit
   - pandas
   - biopython
   - cutadapt

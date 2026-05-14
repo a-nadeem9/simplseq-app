@@ -30,8 +30,10 @@ def memory_bytes() -> int:
 
 
 def snapshot(outdir: Path) -> ResourceSnapshot:
-    outdir.mkdir(parents=True, exist_ok=True)
-    usage = shutil.disk_usage(outdir)
+    usage_path = outdir
+    while not usage_path.exists() and usage_path != usage_path.parent:
+        usage_path = usage_path.parent
+    usage = shutil.disk_usage(usage_path)
     return ResourceSnapshot(
         cpu_count=os.cpu_count() or 1,
         memory_bytes=memory_bytes(),

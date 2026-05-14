@@ -145,19 +145,6 @@ def clean_log_text(text: str) -> str:
     return "".join(ch for ch in cleaned if ch in {"\n", "\r", "\t"} or ord(ch) >= 32).replace("\r", "\n")
 
 
-def append_runtime_check_log(outdir: Path, rows: list[dict[str, str]]) -> None:
-    outdir.mkdir(parents=True, exist_ok=True)
-    stamp = time.strftime("%Y-%m-%d %H:%M:%S %Z")
-    with (outdir / "technical_log.txt").open("a", encoding="utf-8") as handle:
-        handle.write(f"[SIMPLseq/App] {stamp} runtime check\n")
-        for row in rows:
-            status = str(row.get("status", "")).upper()
-            name = row.get("name", "check")
-            detail = row.get("detail", "")
-            handle.write(f"[{status}] {name}: {detail}\n")
-        handle.write("\n")
-
-
 def safe_exists(path: Path) -> bool:
     try:
         return path.exists()
@@ -580,7 +567,6 @@ def create_app(root: Path | None = None, workspace_root: Path | None = None) -> 
         samples_path = resolve_app_path(workspace, samples, "samples.csv") if samples else None
         outdir = resolve_app_path(workspace, data.get("outdir"), "results")
         rows = check_environment(app_root, samples_path, outdir=outdir)
-        append_runtime_check_log(outdir, rows)
         failed = sum(1 for row in rows if row.get("status") not in {"ok", "warn"})
         return jsonify({"ok": failed == 0, "failed": failed, "checks": rows})
 
@@ -709,6 +695,8 @@ def open_browser_later(url: str) -> None:
 
 
 def run_server(root: Path | None = None, host: str = "127.0.0.1", port: int = 8501, open_browser: bool = True) -> int:
+    if host not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("SIMPLseq-nf App only serves the browser UI on a loopback host")
     app = create_app(root, Path.cwd())
     url = f"http://{host}:{port}"
     if open_browser:

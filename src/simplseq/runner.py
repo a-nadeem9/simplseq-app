@@ -121,8 +121,8 @@ def check_environment(
     profile: str = "local",
     outdir: Path | None = None,
 ) -> list[dict[str, str]]:
-    if profile != "local":
-        raise ValueError("SIMPLseq-nf App currently supports the local Conda/Nextflow runtime only")
+    if profile not in {"local", "reproducible"}:
+        raise ValueError("SIMPLseq-nf App currently supports local Conda/Nextflow profiles only")
     checks: list[dict[str, str]] = []
     env = local_runtime_env(root)
     command_checks = [("Python", "python"), ("Rscript", "Rscript"), ("MUSCLE", "muscle")]
@@ -189,8 +189,8 @@ def check_environment(
     return checks
 
 
-def analysis_parameters() -> dict[str, object]:
-    return {
+def analysis_parameters(profile: str = "local") -> dict[str, object]:
+    parameters: dict[str, object] = {
         "amplicons_noprimers": "reference/amplicons_noprimers.fasta",
         "snv_filters": "reference/snv_filters.txt",
         "primers_fwd": "workflow/primers/primers_fwd.fa",
@@ -217,6 +217,14 @@ def analysis_parameters() -> dict[str, object]:
         "inline_barcodes_enabled": False,
         "sentinel_locus": "KELT",
     }
+    if profile == "reproducible":
+        parameters.update(
+            {
+                "dada2_multithread": "0",
+                "dada2_seed": "1",
+            }
+        )
+    return parameters
 
 
 def run_nextflow(
@@ -251,7 +259,10 @@ def run_nextflow(
     if progress_file.exists() and not resume:
         progress_file.unlink()
 
-    pinned_parameters = analysis_parameters()
+    if profile not in {"local", "reproducible"}:
+        raise ValueError("SIMPLseq-nf App currently supports local Conda/Nextflow profiles only")
+
+    pinned_parameters = analysis_parameters(profile)
     parameters = {
         "samples": str(samples),
         "outdir": str(outdir),
@@ -259,8 +270,9 @@ def run_nextflow(
         "engine": "nextflow-local",
         "nextflow_profile": profile,
         "resume": resume,
-        "dada2_randomize": "1",
-        "dada2_multithread": "1",
+        "dada2_randomize": pinned_parameters["dada2_randomize"],
+        "dada2_multithread": pinned_parameters["dada2_multithread"],
+        "dada2_seed": pinned_parameters["dada2_seed"],
         "cigar_min_total_reads": 100,
         "cigar_min_samples": 2,
         "cigar_exclude_bimeras": True,
@@ -320,9 +332,6 @@ def run_nextflow(
         legacy_technical_log.write_text(technical_log.read_text(encoding="utf-8"), encoding="utf-8")
         write_state(state_file, status="dry_run", command=command, outdir=str(outdir), technical_log=str(technical_log))
         return RunResult(0, command, technical_log)
-
-    if profile != "local":
-        raise ValueError("SIMPLseq-nf App currently supports the local Conda/Nextflow runtime only")
 
     env = local_runtime_env(root)
     env["NXF_HOME"] = str(outdir / ".nextflow")

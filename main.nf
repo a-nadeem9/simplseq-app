@@ -16,7 +16,6 @@ process PREFLIGHT {
   script:
   def samples_root = file(params.samples).isAbsolute() ? file(params.samples).parent : "${projectDir}/${file(params.samples).parent}"
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python -m simplseq.progress emit --file "${params.outdir}/progress.jsonl" --stage prepare_inputs --status started --message "Checking sample sheet"
@@ -46,7 +45,6 @@ process WRITE_META {
   script:
   def samples_root = file(params.samples).isAbsolute() ? file(params.samples).parent : "${projectDir}/${file(params.samples).parent}"
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python ${projectDir}/workflow/bin/simplseq_nf_helpers.py write-meta --samples ${samples} --out meta.tsv --samples-root ${samples_root}
@@ -68,7 +66,6 @@ process WRITE_PIPELINE_JSON {
   def dada2_multithread_arg = params.dada2_multithread ? "--dada2-multithread ${params.dada2_multithread}" : ''
   def dada2_seed_arg = params.dada2_seed ? "--dada2-seed ${params.dada2_seed}" : ''
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python ${projectDir}/workflow/bin/simplseq_nf_helpers.py write-pipeline-json \
@@ -119,7 +116,6 @@ process DADA2_PIPELINE {
 
   script:
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python -m simplseq.progress emit --file "${params.outdir}/progress.jsonl" --stage dada2 --status started --message "Running DADA2"
@@ -158,7 +154,6 @@ process PREPARE_STAGE2 {
 
   script:
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python -m simplseq.progress emit --file "${params.outdir}/progress.jsonl" --stage prepare_stage2 --status started --message "Cleaning ASV table"
@@ -195,7 +190,6 @@ process POSTPROCESS_DADA2 {
 
   script:
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python -m simplseq.progress emit --file "${params.outdir}/progress.jsonl" --stage asv_mapping --status started --message "Mapping ASVs"
@@ -229,7 +223,6 @@ process PREPARE_STAGE3 {
 
   script:
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python -m simplseq.progress emit --file "${params.outdir}/progress.jsonl" --stage prepare_stage3 --status started --message "Preparing CIGAR inputs"
@@ -255,7 +248,6 @@ process CHECK_CIGAR_INPUTS {
   script:
   def bimera_flag = params.cigar_exclude_bimeras ? '--exclude-bimeras' : ''
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python -m simplseq.progress emit --file "${params.outdir}/progress.jsonl" --stage cigar_check --status started --message "Checking CIGAR inputs"
@@ -293,7 +285,6 @@ process CIGAR_CONVERSION {
   script:
   def bimera_flag = params.cigar_exclude_bimeras ? '-b' : ''
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python -m simplseq.progress emit --file "${params.outdir}/progress.jsonl" --stage asv_to_cigar --status started --message "Converting ASVs to CIGAR"
@@ -334,7 +325,6 @@ process RUN_REPORT {
 
   script:
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   python -m simplseq.progress emit --file "${params.outdir}/progress.jsonl" --stage report --status started --message "Writing report"
@@ -373,7 +363,6 @@ process BIOLOGICAL_EQUIVALENCE {
   def fail_flag = params.biological_equivalence_fail_on_fail ? 'true' : 'false'
   def frozen_root_arg = frozen_root.toString().startsWith('/') ? frozen_root : "${projectDir}/${frozen_root}"
   """
-  export PATH="/opt/conda/bin:/usr/local/bin:\$PATH"
   export PYTHONPATH="${projectDir}/src:\${PYTHONPATH:-}"
   hash -r
   mkdir -p nextflow_equivalence_root/run_dada2

@@ -12,7 +12,7 @@ download results.
 
 ## Runtime Model
 
-Version 0.1-dev uses a managed runtime under the user's home directory:
+Version 1.0 uses a managed runtime under the user's home directory:
 
 ```text
 ~/.local/share/simplseq/envs/v1.0
@@ -21,6 +21,11 @@ Version 0.1-dev uses a managed runtime under the user's home directory:
 Users do not need to activate an environment manually. The `simplseq` launcher
 sets `SIMPLSEQ_PROJECT_ROOT`, `PYTHONPATH`, and the managed runtime path
 internally.
+
+Reinstalling the same version recreates this managed runtime by default. That
+keeps old dependencies from lingering when the app changes. Set
+`SIMPLSEQ_REUSE_ENV=1` only when you intentionally want to keep the existing
+runtime.
 
 ## First-Time Setup
 
@@ -76,6 +81,7 @@ work:
 simplseq scan --fastq-dir data --out samples.csv
 simplseq check --samples samples.csv
 simplseq run-headless --samples samples.csv --out results
+simplseq run-headless --samples samples.csv --out results --profile reproducible
 simplseq status --out results
 simplseq results --out results
 ```
