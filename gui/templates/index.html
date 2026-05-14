@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>SIMPLseq-nf App</title>
+    <link rel="icon" href="/assets/favicon.ico">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}?v={{ asset_version }}">
+  </head>
+  <body>
+    <header class="app-header">
+      <div class="brand">
+        <div class="wordmark" aria-label="SIMPLseq-nf">
+          <span class="wordmark-simpl">SIMPL</span><span class="wordmark-seq">seq</span><span class="wordmark-nf">-nf</span>
+        </div>
+      </div>
+      <nav class="tabs" aria-label="Main sections">
+        <button class="tab is-active" data-tab="inputs">Inputs</button>
+        <button class="tab" data-tab="run">Run</button>
+        <button class="tab" data-tab="results">Results</button>
+        <button class="tab" data-tab="advanced">Advanced</button>
+      </nav>
+      <div class="pipeline-status" aria-live="polite">
+        <span id="pipeline-label">Idle</span>
+        <strong id="pipeline-percent">0%</strong>
+      </div>
+    </header>
+    <div class="global-progress" aria-hidden="true">
+      <span id="global-progress-fill"></span>
+    </div>
+
+    <main class="app-shell">
+      <section id="tab-inputs" class="tab-panel is-active">
+        <div class="two-column">
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Inputs</p>
+                <h2>FASTQ folder</h2>
+              </div>
+            </div>
+
+            <label for="fastq-dir">FASTQ folder</label>
+            <div class="input-row">
+              <input id="fastq-dir" type="text" value="data" autocomplete="off">
+              <button id="browse-button" title="Choose a FASTQ folder">Choose folder</button>
+            </div>
+            <p id="folder-message" class="field-help">Select the folder containing paired FASTQ files. Files are read from disk, not uploaded.</p>
+
+            <div id="common-paths" class="quick-paths" aria-label="Common paths" hidden></div>
+
+            <label for="samples-out">Sample sheet path</label>
+            <input id="samples-out" type="text" value="samples.csv" autocomplete="off">
+
+            <div class="card-action-row">
+              <button id="scan-button" class="primary">Scan folder</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Scan</p>
+                <h2>Detected pairs</h2>
+              </div>
+              <span id="scan-status" class="status-pill">No scan yet</span>
+            </div>
+
+            <div class="metrics">
+              <div><span>FASTQ pairs</span><strong id="metric-pairs">0</strong></div>
+              <div><span>Data size</span><strong id="metric-size">0 B</strong></div>
+              <div><span>MD5 files</span><strong id="metric-md5">0</strong></div>
+              <div><span>Missing pairs</span><strong id="metric-missing">0</strong></div>
+            </div>
+
+            <div id="scan-warnings" class="notice-list"></div>
+
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Sample</th>
+                    <th>Participant</th>
+                    <th>Date</th>
+                    <th>Replicate</th>
+                  </tr>
+                </thead>
+                <tbody id="scan-preview">
+                  <tr><td colspan="4" class="empty">No scan yet.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </div>
+
+        <section class="panel">
+          <div class="panel-heading">
+            <div>
+              <p class="eyebrow">Sample sheet</p>
+              <h2 id="sample-sheet-title">samples.csv</h2>
+            </div>
+            <span id="sample-sheet-status" class="status-pill">Not written</span>
+          </div>
+          <div class="table-wrap compact">
+            <table>
+              <thead>
+                <tr>
+                  <th>sample_id</th>
+                  <th>fastq_1</th>
+                  <th>fastq_2</th>
+                  <th>participant_id</th>
+                  <th>collection_date</th>
+                </tr>
+              </thead>
+              <tbody id="sample-preview">
+                <tr><td colspan="5" class="empty">Write a sample sheet to preview rows.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
+
+      <section id="tab-run" class="tab-panel">
+        <div class="two-column run-layout">
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Run</p>
+                <h2>Launch workflow</h2>
+              </div>
+              <span id="run-state-pill" class="status-pill">Pending</span>
+            </div>
+
+            <label for="run-samples">Sample sheet</label>
+            <input id="run-samples" type="text" value="samples.csv" autocomplete="off">
+
+            <label for="outdir">Output folder</label>
+            <input id="outdir" type="text" value="results" autocomplete="off">
+
+            <div class="option-grid">
+              <label class="check-row">
+                <input id="clean-run" type="checkbox" checked>
+                <span>Start without Nextflow resume</span>
+              </label>
+              <label class="check-row">
+                <input id="dry-run" type="checkbox">
+                <span>Preview technical command only</span>
+              </label>
+            </div>
+
+            <details>
+              <summary>Advanced runtime options</summary>
+              <div class="advanced-grid">
+                <label for="cpus">CPUs</label>
+                <input id="cpus" type="number" min="0" step="1" value="4">
+                <label for="memory">Memory</label>
+                <input id="memory" type="text" value="12 GB">
+              </div>
+            </details>
+
+            <div class="button-row">
+              <button id="check-button">Run runtime check</button>
+              <button id="run-button" class="primary">Start run</button>
+            </div>
+            <span id="check-status" class="status-pill compact-pill">Not checked</span>
+
+            <div id="run-message" class="inline-message"></div>
+
+            <details class="runtime-details">
+              <summary>Runtime check details</summary>
+              <div class="table-wrap compact">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Check</th>
+                      <th>Status</th>
+                      <th>Detail</th>
+                    </tr>
+                  </thead>
+                  <tbody id="check-table">
+                    <tr><td colspan="3" class="empty">Runtime checks run on demand.</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </section>
+
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Progress</p>
+                <h2 id="current-stage">No active run</h2>
+              </div>
+              <button id="refresh-status">Refresh</button>
+            </div>
+
+            <div class="progress-meta">
+              <span>Pipeline progress</span>
+              <strong id="progress-percent">0%</strong>
+            </div>
+            <div class="progress-bar" aria-label="Run progress">
+              <span id="progress-fill"></span>
+            </div>
+            <ol id="stage-list" class="stage-list"></ol>
+          </section>
+        </div>
+
+        <section class="panel terminal-panel">
+          <div class="terminal-heading">
+            <div>
+              <p class="eyebrow">Live terminal</p>
+              <h3>
+                Run output
+                <span id="terminal-spinner" class="spinner" aria-label="Run is active" hidden></span>
+              </h3>
+            </div>
+            <button id="load-log">Refresh log</button>
+          </div>
+          <pre id="technical-log">&gt; Waiting for run.
+&gt; Live progress appears here while SIMPLseq is active.</pre>
+        </section>
+      </section>
+
+      <section id="tab-results" class="tab-panel">
+        <section class="panel results-panel">
+          <div class="results-toolbar">
+            <div class="results-title">
+              <p class="eyebrow">Results</p>
+              <h2>Output files</h2>
+              <p class="results-copy">Primary SIMPLseq output files from the selected results folder.</p>
+            </div>
+            <div class="results-folder-control">
+              <label for="results-outdir">Results folder</label>
+              <input id="results-outdir" type="text" value="results" autocomplete="off">
+              <button id="refresh-results" class="primary">Refresh results</button>
+              <button id="download-bundle" type="button" disabled>Download output bundle</button>
+            </div>
+          </div>
+          <div id="results-list" class="results-list"></div>
+        </section>
+      </section>
+
+      <section id="tab-advanced" class="tab-panel">
+        <div class="two-column">
+          <section class="panel">
+            <div class="panel-heading">
+              <div>
+                <p class="eyebrow">Optional analyses</p>
+                <h2>Downstream modules</h2>
+              </div>
+            </div>
+            <div class="analysis-grid">
+              <article class="analysis-card">
+                <div>
+                  <p class="eyebrow">Placeholder</p>
+                  <h3>Dcifer</h3>
+                  <p>Configuration will appear here when Dcifer integration is available.</p>
+                </div>
+                <span class="status-pill">Coming later</span>
+              </article>
+              <article class="analysis-card">
+                <div>
+                  <p class="eyebrow">Placeholder</p>
+                  <h3>DINEMITES</h3>
+                  <p>Configuration will appear here when DINEMITES integration is available.</p>
+                </div>
+                <span class="status-pill">Coming later</span>
+              </article>
+            </div>
+          </section>
+
+        </div>
+
+      </section>
+    </main>
+
+    <div id="folder-modal" class="folder-modal" aria-hidden="true">
+      <div class="folder-modal__scrim"></div>
+      <div class="folder-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="folder-modal-title">
+        <div class="folder-modal__header">
+          <h2 id="folder-modal-title">Choose folder</h2>
+          <button type="button" class="folder-modal__close" aria-label="Close folder picker">Close</button>
+        </div>
+        <div class="folder-modal__body">
+          <label for="browse-path">Current folder</label>
+          <div class="input-row">
+            <input id="browse-path" type="text" autocomplete="off">
+            <button id="browse-parent">Parent</button>
+          </div>
+          <div id="browse-list" class="browse-list"></div>
+        </div>
+      </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='js/app.js') }}?v={{ asset_version }}"></script>
+  </body>
+</html>

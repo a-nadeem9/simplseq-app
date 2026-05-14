@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -55,6 +56,12 @@ def local_conda_env(root: Path) -> Path | None:
     configured = os.environ.get("SIMPLSEQ_ENV_DIR")
     if configured:
         return Path(configured).expanduser().resolve()
+    conda_prefix = os.environ.get("CONDA_PREFIX")
+    if conda_prefix:
+        return Path(conda_prefix).expanduser().resolve()
+    inferred = Path(sys.executable).resolve().parent.parent
+    if (inferred / "conda-meta").exists() or (inferred / "pyvenv.cfg").exists():
+        return inferred
     return None
 
 
@@ -107,7 +114,13 @@ def run_probe(
     return {"name": name, "status": "ok" if completed.returncode == 0 else "missing", "detail": detail}
 
 
-def check_environment(root: Path, samples: Path | None = None, *, profile: str = "local") -> list[dict[str, str]]:
+def check_environment(
+    root: Path,
+    samples: Path | None = None,
+    *,
+    profile: str = "local",
+    outdir: Path | None = None,
+) -> list[dict[str, str]]:
     if profile != "local":
         raise ValueError("SIMPLseq-nf App currently supports the local Conda/Nextflow runtime only")
     checks: list[dict[str, str]] = []
@@ -172,7 +185,7 @@ def check_environment(root: Path, samples: Path | None = None, *, profile: str =
             }
         )
         checks.extend(sample_file_checks(samples))
-    checks.extend(resource_checks(samples, root / "results"))
+    checks.extend(resource_checks(samples, user_path(outdir or (root / "results")).resolve()))
     return checks
 
 
@@ -328,12 +341,21 @@ def run_nextflow(
         nextflow_profile=profile,
         technical_log=str(technical_log),
     )
-    write_versions(versions_file, root=root, env=env)
-    write_input_md5s(input_md5s_file, samples)
-
     with technical_log.open("w", encoding="utf-8", errors="replace") as log:
         log.write("[SIMPLseq] command: " + " ".join(command) + "\n")
+        log.write("[SIMPLseq] preparing run metadata, versions, and input checks...\n")
         log.flush()
+    write_versions(versions_file, root=root, env=env)
+    with technical_log.open("a", encoding="utf-8", errors="replace") as log:
+        log.write("[SIMPLseq] wrote runtime versions\n")
+        log.flush()
+    write_input_md5s(input_md5s_file, samples)
+    with technical_log.open("a", encoding="utf-8", errors="replace") as log:
+        log.write("[SIMPLseq] wrote input FASTQ MD5 table\n")
+        log.write("[SIMPLseq] starting Nextflow\n")
+        log.flush()
+
+    with technical_log.open("a", encoding="utf-8", errors="replace") as log:
         process = subprocess.Popen(
             command,
             cwd=root,
@@ -385,11 +407,23 @@ def run_nextflow(
 def progress_summary(outdir: Path) -> dict[str, str | int]:
     events = read_events(outdir / "progress.jsonl")
     state = read_json(outdir / "run_state.json")
-    completed = {event.get("stage") for event in events if event.get("status") == "complete"}
+    visible_events = [event for event in events if event.get("user_visible", True)]
+    stage_status: dict[str, str] = {}
+    for event in visible_events:
+        stage = str(event.get("stage", ""))
+        if stage in STAGES:
+            stage_status[stage] = str(event.get("status", ""))
+    completed = {stage for stage, status in stage_status.items() if status == "complete"}
     failed = [event for event in events if event.get("status") in {"failed", "error"}]
     current = ""
-    for event in reversed(events):
-        if event.get("user_visible", True):
+    for event in reversed(visible_events):
+        stage = str(event.get("stage", ""))
+        status = str(event.get("status", ""))
+        if stage in STAGES and status in {"started", "running"} and stage_status.get(stage) not in {"complete", "failed", "error"}:
+            current = stage
+            break
+    if not current:
+        for event in reversed(visible_events):
             current = str(event.get("stage", ""))
             break
     state_status = str(state.get("status", "")) if state else ""

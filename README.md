@@ -11,7 +11,7 @@ Start it with:
 simplseq run
 ```
 
-This opens a browser interface where the user chooses FASTQ files,
+This opens a Flask browser interface where the user chooses a FASTQ folder,
 reviews detected pairs, creates the sample sheet, starts the run, watches
 progress, and downloads results.
 
@@ -24,7 +24,7 @@ SIMPLseq-nf App is GUI-first and CLI-backed.
 
 ```text
 simplseq run
-  -> browser GUI
+  -> Flask browser GUI
       -> SIMPLseq backend runner
           -> local Nextflow pipeline
               -> Conda/Mamba environment
@@ -58,10 +58,17 @@ authors.
 
 ## Install
 
-On Linux/WSL:
+The lowest-friction release path is a GitHub Release with two assets:
+
+- `install-simplseq.sh`
+- `simplseq-nf-app-v1.0.tar.gz`
+
+Users install from the release page with one command.
+
+On Linux, WSL, or macOS:
 
 ```bash
-curl -fsSL https://github.com/a-nadeem9/simplseq-nf-app/releases/download/v0.1.0-dev/install-simplseq.sh | bash
+curl -fsSL https://github.com/a-nadeem9/simplseq-nf-app/releases/download/v1.0/install-simplseq.sh | bash
 simplseq run
 ```
 
@@ -69,6 +76,11 @@ The installer downloads the app files, creates a managed Micromamba runtime
 under `~/.local/share/simplseq`, and installs a `simplseq` launcher into
 `~/.local/bin`. Users do not need to activate an environment manually; the
 launcher sets the project root, Python path, and runtime path internally.
+
+On Linux/WSL, the installer uses the pinned `locks/linux-64-explicit.txt`
+runtime lock when it is present. Set `SIMPLSEQ_USE_LOCK=0` to force a fresh
+solve from `environment.yml`. macOS currently resolves from `environment.yml`;
+add platform locks after testing on Intel and Apple Silicon Macs.
 
 If `simplseq` is not found immediately after installation, open a new shell or
 run:
@@ -80,6 +92,24 @@ source ~/.bashrc
 On Windows, run through WSL. Double-click launchers may be provided later as
 convenience wrappers only; they are not the main install path.
 
+## Release Testing
+
+Build the release assets locally:
+
+```bash
+scripts/build_release.sh
+```
+
+The GitHub Actions workflows provide the end-user test path:
+
+- `Release` builds the tarball/checksum and uploads them to a GitHub Release.
+- `Installer smoke` installs from those release-shaped assets on Linux and
+  macOS runners.
+
+The macOS workflow is the first real gate for macOS support. A passing workflow
+means the installer can fetch the app, create the Micromamba runtime, run the
+runtime check, and expose the `simplseq` launcher on a clean macOS runner.
+
 ## Normal Use
 
 Start the app:
@@ -90,7 +120,7 @@ simplseq run
 
 Then use the browser GUI to:
 
-1. Choose the FASTQ folder.
+1. Choose the FASTQ folder path.
 2. Review detected pairs.
 3. Write the sample sheet.
 4. Choose an output folder.
@@ -108,6 +138,9 @@ The app opens locally, usually at:
 http://localhost:8501
 ```
 
+If that port is busy, `simplseq run` automatically chooses the next available
+local port and prints the browser address.
+
 ## Input Layout
 
 Put paired FASTQ files in a `data/` folder:
@@ -121,8 +154,19 @@ project/
 |   +-- mpg_L34382_Amplicon-Pool-110-Toro142Mar2023Rep2_R2.fastq.gz
 ```
 
-The sample sheet parser understands longitudinal sample names and technical
-replicates such as `Toro142Mar2023Rep1`.
+The sample sheet parser always uses the FASTQ filename prefix as `sample_id`.
+It also fills optional metadata when the name clearly contains common
+participant/date/replicate patterns, including:
+
+```text
+Toro142Mar2023Rep1
+Toro142_Rep1_Mar2023
+2023Mar_Toro142_Rep1
+Toro142-2023-03-15-Rep1
+```
+
+If metadata cannot be inferred safely, those optional fields are left blank;
+the FASTQ paths are still written so Nextflow can run.
 
 ## Direct CLI Mode
 

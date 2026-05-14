@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import socket
@@ -18,8 +19,11 @@ from . import __version__
 
 
 APP_NAME = "SIMPLseq-nf App"
-APP_VERSION = f"v{__version__}-dev" if __version__ == "0.1.0" else f"v{__version__}"
-APP_SUBTITLE = "Linux / WSL browser workflow"
+APP_VERSION = os.environ.get(
+    "SIMPLSEQ_VERSION",
+    "v1.0" if __version__ == "1.0.0" else f"v{__version__}",
+)
+APP_SUBTITLE = "Linux / WSL / macOS browser workflow"
 
 
 def help_description() -> str:
@@ -108,7 +112,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     print_banner("Runtime checks", "Python / R / DADA2 / Nextflow")
     root = project_root()
     samples = user_path(args.samples).resolve() if args.samples else None
-    rows = check_environment(root, samples)
+    outdir = user_path(args.out).resolve()
+    rows = check_environment(root, samples, outdir=outdir)
     failed = print_check_rows(rows)
     if failed:
         print(f"\n{tag('ERROR', '31')} {failed} checks need attention before a full run.")
@@ -164,6 +169,44 @@ def cmd_results(args: argparse.Namespace) -> int:
 
 
 def cmd_app(args: argparse.Namespace) -> int:
+    ui = args.ui or os.environ.get("SIMPLSEQ_UI", "flask")
+    if ui == "streamlit":
+        return cmd_streamlit_app(args)
+    return cmd_flask_app(args)
+
+
+def cmd_flask_app(args: argparse.Namespace) -> int:
+    root = project_root()
+    app = root / "gui" / "flask_app.py"
+    if not app.exists():
+        print(f"Flask app not found: {app}", file=sys.stderr)
+        return 1
+    port = find_free_port(args.port)
+    if port is None:
+        print(
+            f"{tag('ERROR', '31')} No free port found from {args.port} to {args.port + 49}.",
+            file=sys.stderr,
+        )
+        print(f"{tag('INFO', '34')} Stop another app or run: simplseq run --port 8600", file=sys.stderr)
+        return 1
+    if port != args.port:
+        print(f"{tag('INFO', '34')} Port {args.port} is busy; using {port} instead.")
+    print(f"{tag('INFO', '34')} Opening SIMPLseq-nf App at http://{args.host}:{port}")
+
+    try:
+        spec = importlib.util.spec_from_file_location("simplseq_flask_app", app)
+        if spec is None or spec.loader is None:
+            raise ImportError(f"could not load {app}")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+    except ImportError as exc:
+        print(f"{tag('ERROR', '31')} Flask GUI dependencies are not available: {exc}", file=sys.stderr)
+        print(f"{tag('INFO', '34')} Re-run the installer or install the managed runtime.", file=sys.stderr)
+        return 1
+    return int(module.run_server(root=root, host=args.host, port=port, open_browser=not args.no_browser))
+
+
+def cmd_streamlit_app(args: argparse.Namespace) -> int:
     root = project_root()
     app = root / "gui" / "streamlit_app.py"
     if not app.exists():
@@ -233,10 +276,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("check", help="Check local runtime and optional inputs")
     p.add_argument("--samples", default=None)
+    p.add_argument("--out", "--outdir", dest="out", default="results")
     p.set_defaults(func=cmd_check)
 
     p = sub.add_parser("run", help="Open the SIMPLseq-nf App browser interface")
     p.add_argument("--port", type=int, default=8501, help="Preferred local browser port")
+    p.add_argument("--host", default="127.0.0.1", help=argparse.SUPPRESS)
+    p.add_argument("--no-browser", action="store_true", help=argparse.SUPPRESS)
+    p.add_argument("--ui", choices=["flask", "streamlit"], default=None, help=argparse.SUPPRESS)
     p.set_defaults(func=cmd_app)
 
     p = sub.add_parser("run-headless", help="Run the workflow without the browser GUI")

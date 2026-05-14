@@ -48,7 +48,7 @@ def resolve_manifest_path(value: str, manifest_path: str, manifest_root: str | N
 
 def cmd_preflight(args: argparse.Namespace) -> int:
     read_length = args.read_length
-    required = ["sample_id", "fastq_1", "fastq_2", "sample_type"]
+    required = ["sample_id", "fastq_1", "fastq_2"]
     rows = []
 
     Path(args.report).parent.mkdir(parents=True, exist_ok=True)
@@ -79,7 +79,7 @@ def cmd_preflight(args: argparse.Namespace) -> int:
             elif not os.path.exists(resolved):
                 rows.append(("ERROR", sample_id, f"{col} not found: {value}"))
             elif not os.path.exists(resolved + ".md5"):
-                rows.append(("WARN", sample_id, f"{col} has no .md5 sidecar: {value}.md5"))
+                rows.append(("INFO", sample_id, f"{col} has no optional .md5 sidecar; SIMPLseq will compute input MD5: {value}.md5"))
         if row.get("sample_type", "").lower() in {"negative", "ntc", "control_negative"}:
             rows.append(("INFO", sample_id, "Negative control marked in manifest"))
 
@@ -507,81 +507,352 @@ def summarize_asv_to_cigar(path: str) -> list[dict[str, object]]:
     return rows
 
 
+def read_tsv_dicts(path: str) -> list[dict[str, str]]:
+    if not os.path.exists(path):
+        return []
+    with open(path, newline="") as handle:
+        return list(csv.DictReader(handle, delimiter="\t"))
+
+
+def compact_number(value: object) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return str(value)
+    if abs(number) >= 1_000_000:
+        return f"{number / 1_000_000:.1f}M"
+    if abs(number) >= 1_000:
+        return f"{number:,.0f}"
+    if number.is_integer():
+        return f"{int(number):,}"
+    return f"{number:,.1f}"
+
+
+def compact_table_cell(value: object) -> str:
+    text = str(value)
+    numeric_text = text.replace(",", "")
+    if numeric_text.replace(".", "", 1).lstrip("-").isdigit():
+        return compact_number(numeric_text)
+    return text
+
+
+def is_optional_md5_notice(row: dict[str, str]) -> bool:
+    return ".md5 sidecar" in row.get("message", "").lower()
+
+
+def report_metric_card(label: str, value: object, note: str = "", tone: str = "") -> str:
+    tone_class = f" {html.escape(tone)}" if tone else ""
+    note_html = f"<span>{html.escape(note)}</span>" if note else ""
+    return (
+        f'<article class="metric{tone_class}">'
+        "<i></i>"
+        f"<span>{html.escape(label)}</span>"
+        f"<b>{html.escape(str(value))}</b>"
+        f"{note_html}"
+        "</article>"
+    )
+
+
+def report_output_panel(args: argparse.Namespace) -> str:
+    links = [
+        '<a class="download" href="../run_dada2/seqtab_iseq.tsv" download>ASV count table</a>',
+        rel_download(args.cigar, "CIGAR count table"),
+        rel_download(args.asv_to_cigar, "ASV to CIGAR map"),
+        rel_download(args.mapped, "Mapped ASV table"),
+    ]
+    return (
+        '<article class="output-callout" id="output-tables">'
+        "<h2>Output tables</h2>"
+        "<p>Download the full output tables. Technical tables below show previews only.</p>"
+        f'<div class="download-row">{"".join(link for link in links if link)}</div>'
+        "</article>"
+    )
+
+
+def svg_bar_chart(
+    rows: list[dict[str, object]],
+    label_key: str,
+    value_key: str,
+    title: str,
+    subtitle: str = "",
+    color: str = "#2f8fd3",
+    max_items: int = 12,
+    wide: bool = False,
+) -> str:
+    data = rows[:max_items]
+    if not data:
+        return '<div class="chart"><h3>No data available</h3></div>'
+    max_value = max(float(row.get(value_key, 0) or 0) for row in data) or 1.0
+    chart_rows = []
+    for row in data:
+        label = str(row.get(label_key, ""))
+        value = float(row.get(value_key, 0) or 0)
+        width_pct = 100 * value / max_value
+        chart_rows.append(
+            '<div class="chart-row">'
+            f'<span class="chart-label" title="{html.escape(label)}">{html.escape(label)}</span>'
+            '<span class="chart-track">'
+            f'<span style="width:{width_pct:.1f}%"></span>'
+            "</span>"
+            f'<span class="chart-value">{html.escape(compact_number(value))}</span>'
+            "</div>"
+        )
+    classes = "chart chart-wide" if wide else "chart"
+    subtitle_html = f'<p class="note">{html.escape(subtitle)}</p>' if subtitle else ""
+    return (
+        f'<div class="{classes}">'
+        f"<h3>{html.escape(title)}</h3>"
+        f"{subtitle_html}"
+        f'{"".join(chart_rows)}'
+        "</div>"
+    )
+
+
+def svg_funnel(items: list[tuple[str, int, str]]) -> str:
+    max_value = max((value for _, value, _ in items), default=1) or 1
+    steps = []
+    previous_value = None
+    previous_label = ""
+    for label, value, _color in items:
+        width = max(2, 100 * value / max_value)
+        if previous_value is None:
+            note = "baseline"
+        elif previous_value:
+            note = f"{value / previous_value:.0%} of {previous_label}"
+        else:
+            note = f"0% of {previous_label}"
+        previous_value = value
+        previous_label = label
+        steps.append(
+            '<div class="chart-row funnel-row">'
+            f'<span class="chart-label" title="{html.escape(label)}">{html.escape(label)}</span>'
+            '<span class="chart-track">'
+            f'<span style="width:{width:.1f}%"></span>'
+            "</span>"
+            f'<span class="chart-value">{html.escape(compact_number(value))}<small>{html.escape(note)}</small></span>'
+            "</div>"
+        )
+    return (
+        "<h2>ASV processing funnel</h2>"
+        '<p class="note">How many sequence features survive each major step.</p>'
+        '<div class="chart funnel-card">'
+        f'{"".join(steps)}'
+        "</div>"
+    )
+
+
+def report_table(
+    rows: list[dict[str, object]],
+    columns: list[tuple[str, str]],
+    title: str,
+    subtitle: str = "",
+    bar_key: str = "",
+) -> str:
+    if not rows:
+        return f"<h2>{html.escape(title)}</h2><p class=\"note\">No data available.</p>"
+    header = "".join(f"<th>{html.escape(label)}</th>" for label, _ in columns)
+    max_value = max((float(row.get(bar_key, 0) or 0) for row in rows), default=0) or 1.0
+    body = []
+    for row in rows:
+        cells = []
+        for index, (_, key) in enumerate(columns):
+            value = row.get(key, "")
+            if index == 0 and bar_key:
+                bar_value = float(row.get(bar_key, 0) or 0)
+                width = 100 * bar_value / max_value
+                cell = (
+                    f'<div class="bar-label">{html.escape(str(value))}</div>'
+                    '<div class="bar">'
+                    f'<span style="width:{width:.1f}%"></span>'
+                    "</div>"
+                )
+            else:
+                if isinstance(value, (int, float)):
+                    value = compact_number(value)
+                cell = html.escape(str(value))
+            cells.append(f"<td>{cell}</td>")
+        body.append(f"<tr>{''.join(cells)}</tr>")
+    subtitle_html = f'<p class="note">{html.escape(subtitle)}</p>' if subtitle else ""
+    return (
+        f"<h2>{html.escape(title)}</h2>"
+        f"{subtitle_html}"
+        f'<table><thead><tr>{header}</tr></thead><tbody>{"".join(body)}</tbody></table>'
+    )
+
+
+def report_details(path: str, title: str, limit: int = 12, note: str = "") -> str:
+    header, rows = read_tsv(path, limit=limit)
+    if not header:
+        return ""
+    head = "".join(f"<th>{html.escape(str(col))}</th>" for col in header)
+    status_idx = header.index("status") if "status" in header else -1
+    message_idx = header.index("message") if "message" in header else -1
+    body_rows = []
+    for row in rows:
+        cells = list(row)
+        if status_idx >= 0 and message_idx >= 0 and ".md5 sidecar" in str(cells[message_idx]).lower():
+            cells[status_idx] = "INFO"
+        body_rows.append(
+            "<tr>" + "".join(f"<td>{html.escape(compact_table_cell(cell))}</td>" for cell in cells) + "</tr>"
+        )
+    body = "".join(body_rows)
+    note_html = f'<p class="detail-note">{note}</p>' if note else ""
+    return (
+        f"<details><summary>{html.escape(title)}</summary>"
+        f"{note_html}"
+        f'<div class="technical"><table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table></div>'
+        "</details>"
+    )
+
+
 def cmd_make_report(args: argparse.Namespace) -> int:
     cigar_overview, cigar_amplicons, sample_depth = summarize_cigar_matrix(args.cigar)
     mapped_overview, mapped_amplicons = summarize_mapped_asvs(args.mapped)
     asv_cigar_rows = summarize_asv_to_cigar(args.asv_to_cigar)
+    preflight_rows = read_tsv_dicts(args.preflight)
+    status_counts = Counter(row.get("status", "") for row in preflight_rows)
+    optional_md5_notices = sum(1 for row in preflight_rows if is_optional_md5_notice(row))
+    filter_pass_total = sum(int(row.get("filter_pass_asvs", 0) or 0) for row in mapped_amplicons)
+    locus_counts = Counter(int(row.get("loci_detected", 0) or 0) for row in sample_depth)
+    locus_recovery_rows = [
+        {"bucket": f"{count}/6", "samples": locus_counts.get(count, 0)}
+        for count in range(6, -1, -1)
+    ]
+    samples = cigar_overview.get("samples", "NA")
+    median_loci = cigar_overview.get("median_loci_detected", "NA")
+    total_final_reads = cigar_overview.get("total_final_reads", "NA")
+    samples_with_reads = cigar_overview.get("samples_with_reads", "NA")
+    mapped_asvs = mapped_overview.get("mapped_asvs", "NA")
+    amplicons_with_asvs = mapped_overview.get("amplicons_with_asvs", "NA")
+    total_haplotypes = cigar_overview.get("total_haplotypes", "NA")
+    unique_cigars = sum(int(row.get("unique_cigars", 0) or 0) for row in asv_cigar_rows)
+    error_count = status_counts.get("ERROR", 0)
+    warning_count = sum(
+        1
+        for row in preflight_rows
+        if row.get("status", "") == "WARN" and not is_optional_md5_notice(row)
+    )
+    if error_count:
+        run_status = "Needs review"
+    elif warning_count:
+        run_status = "Passed with warnings"
+    else:
+        run_status = "Passed"
+
+    def safe_int(value: object) -> int:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return 0
+
     cards = [
-        metric_card("samples", cigar_overview.get("samples", "NA"), "final CIGAR table"),
-        metric_card("samples with reads", cigar_overview.get("samples_with_reads", "NA")),
-        metric_card("median loci detected", cigar_overview.get("median_loci_detected", "NA"), ">=1 final read"),
-        metric_card("final reads", cigar_overview.get("total_final_reads", "NA")),
-        metric_card("mapped ASVs", mapped_overview.get("mapped_asvs", "NA")),
-        metric_card("amplicons with ASVs", mapped_overview.get("amplicons_with_asvs", "NA")),
+        report_metric_card("Samples", compact_number(samples), "final CIGAR table", "blue"),
+        report_metric_card("Final reads", compact_number(total_final_reads), "post-CIGAR reads", "green"),
+        report_metric_card("Median loci detected", f"{format_number(median_loci)}/6", "per sample", "gold"),
+        report_metric_card("ASVs mapped to loci", compact_number(mapped_asvs), "amplicon-mapped variants", "blue"),
+        report_metric_card("CIGAR haplotypes", compact_number(total_haplotypes), f"{compact_number(unique_cigars)} unique CIGAR strings", "pink"),
     ]
     html_text = f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{html.escape(args.project_name)} Run Summary</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Run Summary</title>
   <style>
-    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #17202a; max-width: 1280px; }}
-    h1 {{ margin-bottom: 0; }}
-    h2 {{ margin-top: 34px; border-top: 1px solid #d8dee4; padding-top: 22px; }}
+    * {{ box-sizing: border-box; }}
+    body {{ font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; margin: 32px; color: #20211f; background: #f6f4ed; max-width: 1280px; line-height: 1.45; }}
+    h1 {{ margin: 0; font-size: 34px; letter-spacing: -0.02em; }}
+    h2 {{ margin-top: 34px; border-top: 1px solid #dcd8ce; padding-top: 22px; font-size: 24px; letter-spacing: -0.01em; }}
     h3 {{ margin: 0 0 12px 0; font-size: 16px; }}
-    table {{ border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 14px; }}
-    th, td {{ border: 1px solid #d8dee4; padding: 7px 9px; text-align: left; vertical-align: top; }}
-    th {{ background: #eef6ff; color: #075985; }}
-    .note {{ color: #52616b; margin-top: 6px; }}
+    .report-header {{ display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: end; border-bottom: 1px solid #dcd8ce; padding: 22px 0 24px; }}
+    .lede {{ max-width: 760px; margin: 12px 0 0; color: #626761; }}
+    .status-card {{ min-width: 300px; border: 1px solid #dcd8ce; background: #fffdf8; border-radius: 10px; padding: 16px 18px; }}
+    .status-card span, .metric span {{ display: block; color: #626761; font-size: 12px; font-weight: 800; text-transform: uppercase; }}
+    .status-card strong {{ display: block; margin-top: 8px; font-size: 19px; }}
+    .status-card small {{ display: block; margin-top: 6px; }}
+    .metrics {{ display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; margin-top: 22px; }}
+    .metric {{ min-height: 132px; border: 1px solid #dcd8ce; background: #fffdf8; border-radius: 8px; padding: 16px; }}
+    .metric i {{ display: block; width: 24px; height: 2px; border-radius: 999px; background: #d8d6cf; margin-bottom: 18px; }}
+    .metric.blue i {{ background: #d8e1e8; }} .metric.green i {{ background: #d8e7dd; }} .metric.gold i {{ background: #e6dcc8; }} .metric.pink i {{ background: #ead9e2; }}
+    .metric b {{ display: block; font-size: 28px; line-height: 1.05; margin-top: 6px; }}
+    .metric span + b {{ margin-top: 6px; }}
+    .metric b + span {{ color: #626761; font-size: 13px; font-weight: 400; text-transform: none; margin-top: 8px; }}
+    .output-callout {{ border: 1px solid #dcd8ce; background: #fffdf8; border-radius: 10px; padding: 16px; margin: 22px 0 0; }}
+    .output-callout h2 {{ border: 0; padding: 0; margin: 0 0 6px; font-size: 18px; }}
+    .output-callout p {{ margin: 0; color: #626761; }}
+    .download-row {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 14px; }}
+    table {{ border-collapse: collapse; width: 100%; margin-top: 10px; font-size: 14px; background: #fffdf8; }}
+    th, td {{ border: 1px solid #dcd8ce; padding: 7px 9px; text-align: left; vertical-align: top; }}
+    th {{ background: #eeece4; color: #51564f; font-size: 12px; text-transform: uppercase; }}
+    td:not(:first-child), th:not(:first-child) {{ text-align: right; font-variant-numeric: tabular-nums; }}
+    .note {{ color: #626761; margin-top: 6px; }}
     .cards {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-top: 20px; }}
-    .card {{ border: 1px solid #cfe8ff; background: #f6fbff; border-radius: 6px; padding: 12px; }}
-    .card b {{ display: block; font-size: 24px; color: #0369a1; }}
-    .card em {{ display: block; font-style: normal; font-weight: 600; margin-top: 2px; }}
-    .card span {{ display: block; color: #52616b; font-size: 12px; margin-top: 4px; }}
-    .bar {{ height: 8px; background: #e5e7eb; border-radius: 999px; margin-top: 5px; overflow: hidden; }}
-    .bar span {{ display: block; height: 100%; background: #0ea5e9; }}
-    .bar-label {{ font-weight: 650; color: #075985; }}
-    .downloads {{ display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 18px 0 26px; }}
-    .download {{ display: inline-block; border: 1px solid #0ea5e9; color: #075985; background: #f0f9ff; border-radius: 4px; padding: 6px 9px; text-decoration: none; font-size: 13px; font-weight: 600; }}
-    .viz-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin-top: 22px; }}
-    .chart {{ border: 1px solid #d8dee4; border-radius: 6px; padding: 14px; background: #fff; }}
-    .chart-row {{ display: grid; grid-template-columns: 88px 1fr 92px; gap: 10px; align-items: center; margin: 8px 0; }}
-    .chart-label {{ font-weight: 650; color: #075985; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
-    .chart-track {{ display: block; height: 11px; background: #e5e7eb; border-radius: 999px; overflow: hidden; }}
-    .chart-track span {{ display: block; height: 100%; background: #0ea5e9; }}
-    .chart-value {{ text-align: right; font-variant-numeric: tabular-nums; color: #334155; }}
-    details {{ border-top: 1px solid #d8dee4; margin-top: 18px; padding-top: 12px; }}
-    summary {{ cursor: pointer; font-weight: 700; color: #075985; font-size: 18px; }}
-    .details-note {{ color: #52616b; margin-top: 30px; }}
+    .card {{ border: 1px solid #dcd8ce; background: #fffdf8; border-radius: 6px; padding: 12px; }}
+    .card b {{ display: block; font-size: 24px; color: #20211f; }}
+    .card em {{ display: block; font-style: normal; font-weight: 700; margin-top: 2px; }}
+    .card span {{ display: block; color: #626761; font-size: 12px; margin-top: 4px; }}
+    .bar {{ height: 8px; background: #ebe8df; border-radius: 999px; margin-top: 5px; overflow: hidden; }}
+    .bar span {{ display: block; height: 100%; background: #343832; }}
+    .bar-label {{ font-weight: 700; color: #20211f; }}
+    .download {{ display: inline-block; border: 1px solid #d2cec3; color: #20211f; background: #fffdf8; border-radius: 999px; padding: 6px 10px; text-decoration: none; font-size: 13px; font-weight: 700; }}
+    .viz-grid {{ display: grid; grid-template-columns: repeat(2, minmax(320px, 1fr)); gap: 16px; margin-top: 22px; }}
+    .chart {{ border: 1px solid #dcd8ce; border-radius: 6px; padding: 14px; background: #fffdf8; }}
+    .chart-wide {{ grid-column: 1 / -1; }}
+    .chart-row {{ display: grid; grid-template-columns: 112px 1fr 82px; gap: 10px; align-items: center; margin: 8px 0; }}
+    .chart-label {{ font-weight: 700; color: #20211f; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }}
+    .chart-track {{ display: block; height: 11px; background: #ebe8df; border-radius: 999px; overflow: hidden; }}
+    .chart-track span {{ display: block; height: 100%; background: #343832; }}
+    .chart-value {{ text-align: right; font-variant-numeric: tabular-nums; color: #3b403a; }}
+    .chart-value small {{ display: block; color: #777b72; font-size: 10px; }}
+    .funnel-row {{ grid-template-columns: 136px 1fr 82px; }}
+    .funnel-row .chart-label {{ white-space: normal; line-height: 1.15; }}
+    .funnel-row .chart-track span {{ background: #222522; }}
+    .funnel-card {{ margin-top: 0; }}
+    .funnel-card .chart-row {{ grid-template-columns: 190px 1fr 150px; max-width: 980px; }}
+    details {{ border-top: 1px solid #dcd8ce; margin-top: 18px; padding-top: 12px; }}
+    summary {{ cursor: pointer; font-weight: 700; color: #20211f; font-size: 18px; }}
+    .technical {{ overflow: auto; max-height: 360px; }}
+    .detail-note {{ color: #626761; margin-top: 12px; }}
+    .details-note {{ color: #626761; margin-top: 30px; }}
+    .footer-note {{ color: #626761; margin-top: 28px; font-size: 12px; }}
+    @media (max-width: 900px) {{ .report-header {{ grid-template-columns: 1fr; }} .status-card {{ min-width: 0; }} .metrics {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} .viz-grid {{ grid-template-columns: 1fr; }} }}
+    @media (max-width: 720px) {{ body {{ margin: 18px; }} .chart-row {{ grid-template-columns: 96px 1fr 74px; }} }}
+    @media print {{
+      body {{ background: #fff; color: #111; margin: 0.35in; }}
+      .download {{ color: #111; }}
+      .chart, .card, table, details {{ break-inside: avoid; page-break-inside: avoid; }}
+    }}
   </style>
 </head>
 <body>
-  <h1>{html.escape(args.project_name)} Run Summary</h1>
-  <p class="note">Generated by the Nextflow SIMPLseq workflow. Read-depth and locus-detection summaries follow the way SIMPLseq performance is discussed in the assay paper.</p>
-  <div class="cards">{''.join(cards)}</div>
-  {downloads_panel(args)}
+  <header class="report-header">
+    <div>
+      <h1>Run summary</h1>
+      <p class="lede">A compact overview of SIMPLseq read depth, locus recovery, ASV filtering, and CIGAR conversion for this run.</p>
+    </div>
+    <aside class="status-card"><span>Run status</span><strong>{html.escape(run_status)}</strong><small>{html.escape(compact_number(samples))} samples processed &middot; {error_count} errors &middot; {warning_count} warnings</small></aside>
+  </header>
+  <section class="metrics">{''.join(cards)}</section>
+  {report_output_panel(args)}
   <h2>Visual Summary</h2>
   <div class="viz-grid">
-    {horizontal_chart(cigar_amplicons, "amplicon", "final_reads", "Final reads by amplicon")}
-    {horizontal_chart(mapped_amplicons, "amplicon", "filter_pass_asvs", "Filter-pass ASVs by amplicon")}
-    {locus_recovery_chart(sample_depth)}
-    {horizontal_chart(asv_cigar_rows, "amplicon", "unique_cigars", "Unique CIGAR strings")}
+    {svg_bar_chart(cigar_amplicons, "amplicon", "final_reads", "Final reads by amplicon")}
+    {svg_bar_chart(mapped_amplicons, "amplicon", "filter_pass_asvs", "Filter-pass ASVs by amplicon")}
+    {svg_bar_chart(locus_recovery_rows, "bucket", "samples", "Sample locus recovery")}
+    {svg_bar_chart(asv_cigar_rows, "amplicon", "unique_cigars", "Unique CIGAR strings")}
   </div>
-  <h2>Final Read Depth by Amplicon</h2>
-  <p class="note">Final CIGAR/haplotype reads grouped by SIMPLseq target. Samples detected uses a 100-read threshold, matching the paper's locus-detection summaries.</p>
-  {bar_rows(cigar_amplicons, "final_reads", "amplicon", [("Amplicon", "amplicon"), ("Final reads", "final_reads"), ("Samples >=100 reads", "samples_detected"), ("Haplotypes", "haplotypes"), ("Median reads in detected samples", "median_reads_detected_samples")])}
-  <h2>Mapped ASVs by Amplicon</h2>
-  {bar_rows(mapped_amplicons, "mapped_reads", "amplicon", [("Amplicon", "amplicon"), ("Mapped reads", "mapped_reads"), ("Mapped ASVs", "mapped_asvs"), ("Filter-pass ASVs", "filter_pass_asvs"), ("Max samples per ASV", "max_samples_per_asv")])}
-  <h2>Sample Read Depth and Locus Recovery</h2>
-  {bar_rows(sample_depth[:30], "total_reads", "sample", [("Sample", "sample"), ("Final reads", "total_reads"), ("Loci detected", "loci_detected"), ("Haplotypes detected", "haplotypes_detected")])}
-  <h2>ASV to CIGAR Conversion</h2>
-  {bar_rows(asv_cigar_rows, "asvs_with_cigar", "amplicon", [("Amplicon", "amplicon"), ("ASVs with CIGAR", "asvs_with_cigar"), ("Unique CIGAR strings", "unique_cigars")])}
-  <p class="details-note">Detailed checks and table previews are collapsed by default.</p>
-  {html_table(args.preflight, "Preflight", collapsed=True)}
-  {html_table(args.geometry, "Amplicon Reference Check", collapsed=True)}
-  {html_table(args.cigar_summary, "CIGAR Input Check", collapsed=True)}
-  {html_table(args.mapped, "Mapped ASVs", limit=20, collapsed=True)}
-  {html_table(args.cigar, "CIGAR Count Table Preview", limit=8, collapsed=True)}
+  {svg_funnel([("Mapped ASVs", safe_int(mapped_asvs), "#343832"), ("Filter-pass ASVs", filter_pass_total, "#343832"), ("CIGAR haplotypes", safe_int(total_haplotypes), "#343832")])}
+  {report_table(cigar_amplicons, [("Amplicon", "amplicon"), ("Final reads", "final_reads"), ("Samples >=100 reads", "samples_detected"), ("Haplotypes", "haplotypes"), ("Median reads in detected samples", "median_reads_detected_samples")], "Final Read Depth by Amplicon", "Final CIGAR/haplotype reads grouped by SIMPLseq target. Samples detected uses a 100-read threshold, matching the paper's locus-detection summaries.", "final_reads")}
+  {report_table(mapped_amplicons, [("Amplicon", "amplicon"), ("Mapped reads", "mapped_reads"), ("Mapped ASVs", "mapped_asvs"), ("Filter-pass ASVs", "filter_pass_asvs"), ("Max samples per ASV", "max_samples_per_asv")], "Mapped ASVs by Amplicon", "", "mapped_reads")}
+  {report_table(sample_depth, [("Sample", "sample"), ("Final reads", "total_reads"), ("Loci detected", "loci_detected"), ("Haplotypes detected", "haplotypes_detected")], "Sample Read Depth and Locus Recovery", "", "total_reads")}
+  {report_table(asv_cigar_rows, [("Amplicon", "amplicon"), ("ASVs with CIGAR", "asvs_with_cigar"), ("Unique CIGAR strings", "unique_cigars")], "ASV to CIGAR Conversion", "", "asvs_with_cigar")}
+  <p class="details-note">Detailed checks and table previews are collapsed by default. Download full tables above.</p>
+  {report_details(args.preflight, "Preflight", limit=40)}
+  {report_details(args.geometry, "Amplicon Reference Check")}
+  {report_details(args.cigar_summary, "CIGAR Input Check")}
+  {report_details(args.mapped, "Mapped ASVs", limit=20, note='Preview only. Use the Download tables buttons above for the full table.')}
+  {report_details(args.cigar, "CIGAR Count Matrix", limit=6, note='Preview only. Use the Download tables buttons above for the full table.')}
+  <p class="footer-note">Generated by the Nextflow SIMPLseq workflow. {error_count} errors, {warning_count} warnings, {optional_md5_notices} optional checksum notices.</p>
 </body>
 </html>
 """

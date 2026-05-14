@@ -26,6 +26,14 @@ MONTHS = {
     "Nov": "11",
     "Dec": "12",
 }
+MONTH_ALIASES = {key.lower(): value for key, value in MONTHS.items()}
+MONTH_ALIASES["sept"] = "09"
+MONTH_PATTERN = r"Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec"
+NON_PARTICIPANT_TOKEN_RE = re.compile(r"^(run|lane|pool|amplicon|l)[0-9A-Za-z]*$", re.IGNORECASE)
+NEGATIVE_SAMPLE_RE = re.compile(
+    r"(^|[^a-z0-9])(ctrl|control|ntc|negative|neg|blank|no[-_ ]?template)([^a-z0-9]|$)",
+    re.IGNORECASE,
+)
 
 SAMPLE_FIELDS = [
     "sample_id",
@@ -35,12 +43,6 @@ SAMPLE_FIELDS = [
     "participant_id",
     "collection_date",
     "replicate",
-    "plate_id",
-    "well",
-    "expected_fwd_barcode",
-    "expected_rev_barcode",
-    "sequencing_run",
-    "amplicon_pool",
 ]
 
 READ_SUFFIXES = [
@@ -60,8 +62,6 @@ class FastqPair:
     participant_id: str = ""
     collection_date: str = ""
     replicate: str = ""
-    sequencing_run: str = ""
-    amplicon_pool: str = ""
 
 
 @dataclass(frozen=True)
@@ -84,13 +84,106 @@ def split_read_suffix(name: str) -> tuple[str, str, str] | None:
     return None
 
 
-def mate_name(prefix: str, suffix: str) -> str:
-    for r1_suffix, r2_suffix in READ_SUFFIXES:
-        if suffix == r1_suffix:
-            return prefix + r2_suffix
-        if suffix == r2_suffix:
-            return prefix + r1_suffix
-    return prefix + suffix
+def _month_number(value: str) -> str:
+    return MONTH_ALIASES.get(value.lower(), "")
+
+
+def _format_date(year: str, month: str, day: str = "") -> str:
+    month_int = int(month)
+    if day:
+        return f"{int(year):04d}-{month_int:02d}-{int(day):02d}"
+    return f"{int(year):04d}-{month_int:02d}"
+
+
+def _looks_like_date_token(token: str) -> bool:
+    return bool(
+        re.fullmatch(rf"({MONTH_PATTERN})[0-9]{{4}}", token, re.IGNORECASE)
+        or re.fullmatch(rf"[0-9]{{4}}({MONTH_PATTERN})", token, re.IGNORECASE)
+        or re.fullmatch(r"[0-9]{6,8}", token)
+    )
+
+
+def infer_sample_type(sample_id: str) -> str:
+    return "negative" if NEGATIVE_SAMPLE_RE.search(sample_id) else "sample"
+
+
+def parse_label_metadata(label: str) -> dict[str, str]:
+    parsed = {
+        "participant_id": "",
+        "collection_date": "",
+        "replicate": "",
+    }
+
+    compact = re.match(
+        rf"^(?P<participant>[A-Za-z]+[0-9]+)(?P<month>{MONTH_PATTERN})(?P<year>[0-9]{{4}})(?P<replicate>Rep[0-9A-Za-z]+)$",
+        label,
+        re.IGNORECASE,
+    )
+    if compact:
+        parsed["participant_id"] = compact.group("participant")
+        parsed["collection_date"] = f"{compact.group('year')}-{_month_number(compact.group('month'))}"
+        parsed["replicate"] = compact.group("replicate")
+        return parsed
+
+    replicate = re.search(r"(Rep(?:licate)?[-_ .]*[0-9]+[A-Za-z]?)", label, re.IGNORECASE)
+    if replicate:
+        parsed["replicate"] = re.sub(
+            r"^Replicate",
+            "Rep",
+            re.sub(r"[-_ .]+", "", replicate.group(1)),
+            flags=re.IGNORECASE,
+        )
+
+    month_year = re.search(
+        rf"(?P<month>{MONTH_PATTERN})[-_ .]*(?P<year>[0-9]{{4}})",
+        label,
+        re.IGNORECASE,
+    )
+    year_month = re.search(
+        rf"(?P<year>[0-9]{{4}})[-_ .]*(?P<month>{MONTH_PATTERN})",
+        label,
+        re.IGNORECASE,
+    )
+    iso_date = re.search(
+        r"(?P<year>20[0-9]{2}|19[0-9]{2})[-_ .](?P<month>[0-9]{1,2})(?:[-_ .](?P<day>[0-9]{1,2}))?",
+        label,
+    )
+    compact_date = re.search(r"(?P<year>20[0-9]{2}|19[0-9]{2})(?P<month>[0-9]{2})(?P<day>[0-9]{2})", label)
+
+    if month_year:
+        parsed["collection_date"] = f"{month_year.group('year')}-{_month_number(month_year.group('month'))}"
+    elif year_month:
+        parsed["collection_date"] = f"{year_month.group('year')}-{_month_number(year_month.group('month'))}"
+    elif iso_date:
+        parsed["collection_date"] = _format_date(
+            iso_date.group("year"),
+            iso_date.group("month"),
+            iso_date.group("day") or "",
+        )
+    elif compact_date:
+        parsed["collection_date"] = _format_date(
+            compact_date.group("year"),
+            compact_date.group("month"),
+            compact_date.group("day"),
+        )
+
+    tokens = [token for token in re.split(r"[^A-Za-z0-9]+", label) if token]
+    for token in tokens:
+        if re.fullmatch(rf"{MONTH_PATTERN}", token, re.IGNORECASE):
+            continue
+        if re.fullmatch(r"Rep(?:licate)?[0-9A-Za-z]*", token, re.IGNORECASE):
+            continue
+        if re.fullmatch(r"(20[0-9]{2}|19[0-9]{2}|[0-9]{1,2})", token):
+            continue
+        if _looks_like_date_token(token):
+            continue
+        if NON_PARTICIPANT_TOKEN_RE.fullmatch(token):
+            continue
+        if re.search(r"[A-Za-z]", token) and re.search(r"[0-9]", token):
+            parsed["participant_id"] = token
+            break
+
+    return parsed
 
 
 def parse_fastq_name(name: str, include_pool_in_sample_id: bool = False) -> dict[str, str]:
@@ -102,8 +195,6 @@ def parse_fastq_name(name: str, include_pool_in_sample_id: bool = False) -> dict
         "participant_id": "",
         "collection_date": "",
         "replicate": "",
-        "sequencing_run": "",
-        "amplicon_pool": "",
     }
     mpg = re.match(
         r"^mpg_(?P<run>[^_]+)_Amplicon-Pool-(?P<pool>[0-9]+)-(?P<label>.+)$",
@@ -111,28 +202,50 @@ def parse_fastq_name(name: str, include_pool_in_sample_id: bool = False) -> dict
     )
     if mpg:
         label = mpg.group("label")
-        parsed["sequencing_run"] = mpg.group("run")
-        parsed["amplicon_pool"] = mpg.group("pool")
         parsed["sample_id"] = f"{label}_Pool{mpg.group('pool')}" if include_pool_in_sample_id else label
     else:
         label = stripped
 
-    longitudinal = re.match(
-        r"^(?P<participant>[A-Za-z]+[0-9]+)(?P<month>Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)(?P<year>[0-9]{4})(?P<replicate>Rep[0-9]+)$",
-        label,
-    )
-    if longitudinal:
-        parsed["participant_id"] = longitudinal.group("participant")
-        parsed["collection_date"] = f"{longitudinal.group('year')}-{MONTHS[longitudinal.group('month')]}"
-        parsed["replicate"] = longitudinal.group("replicate")
+    parsed.update(parse_label_metadata(label))
     return parsed
 
 
+def _safe_exists(path: Path) -> bool:
+    try:
+        return path.exists()
+    except OSError:
+        return False
+
+
+def _safe_files(root: Path) -> list[Path]:
+    files: list[Path] = []
+    try:
+        for entry in root.iterdir():
+            try:
+                if entry.is_file():
+                    files.append(entry)
+            except OSError:
+                continue
+    except OSError:
+        return files
+    return files
+
+
+def _safe_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return 0
+
+
 def scan_fastqs(fastq_dir: Path | str, *, include_pool_in_sample_id: bool = False) -> FastqScan:
-    root = user_path(fastq_dir).resolve()
-    if not root.exists():
+    try:
+        root = user_path(fastq_dir).resolve()
+    except OSError:
+        root = user_path(fastq_dir).expanduser()
+    if not _safe_exists(root):
         return FastqScan(root, [], [], [], 0, 0, [])
-    files = [p for p in root.iterdir() if p.is_file()]
+    files = _safe_files(root)
     r1: dict[str, tuple[Path, str]] = {}
     r2: dict[str, tuple[Path, str]] = {}
     for path in files:
@@ -146,7 +259,7 @@ def scan_fastqs(fastq_dir: Path | str, *, include_pool_in_sample_id: bool = Fals
             r2[prefix] = (path, suffix)
     pairs: list[FastqPair] = []
     missing_r2: list[str] = []
-    for prefix, (f1, suffix) in sorted(r1.items()):
+    for prefix, (f1, _suffix) in sorted(r1.items()):
         if prefix not in r2:
             missing_r2.append(f1.name)
             continue
@@ -158,19 +271,17 @@ def scan_fastqs(fastq_dir: Path | str, *, include_pool_in_sample_id: bool = Fals
                 sample_id=sample_id,
                 fastq_1=f1,
                 fastq_2=f2,
-                sample_type="negative" if "ctrl" in sample_id.lower() else "sample",
+                sample_type=infer_sample_type(sample_id),
                 participant_id=parsed["participant_id"],
                 collection_date=parsed["collection_date"],
                 replicate=parsed["replicate"],
-                sequencing_run=parsed["sequencing_run"],
-                amplicon_pool=parsed["amplicon_pool"],
             )
         )
     orphan_r2 = sorted(path.name for prefix, (path, _suffix) in r2.items() if prefix not in r1)
     duplicate_ids = sorted(
         sample_id for sample_id, count in Counter(pair.sample_id for pair in pairs).items() if count > 1
     )
-    total_bytes = sum(p.stat().st_size for p in files if split_read_suffix(p.name))
+    total_bytes = sum(_safe_size(p) for p in files if split_read_suffix(p.name))
     md5_files = sum(1 for p in files if p.name.endswith(".md5"))
     return FastqScan(root, pairs, missing_r2, orphan_r2, md5_files, total_bytes, duplicate_ids)
 
@@ -190,12 +301,6 @@ def pair_to_row(pair: FastqPair, output_root: Path, absolute: bool) -> dict[str,
         "participant_id": pair.participant_id,
         "collection_date": pair.collection_date,
         "replicate": pair.replicate,
-        "plate_id": "",
-        "well": "",
-        "expected_fwd_barcode": "",
-        "expected_rev_barcode": "",
-        "sequencing_run": pair.sequencing_run,
-        "amplicon_pool": pair.amplicon_pool,
     }
 
 

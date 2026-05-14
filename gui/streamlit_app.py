@@ -1013,7 +1013,6 @@ with tab_inputs:
                 "participant": pair.participant_id,
                 "date": pair.collection_date,
                 "replicate": pair.replicate,
-                "pool": pair.amplicon_pool,
                 "type": pair.sample_type,
             }
             for pair in scan.pairs[:100]

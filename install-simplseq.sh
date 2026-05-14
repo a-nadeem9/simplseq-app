@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="${SIMPLSEQ_VERSION:-v0.1.0-dev}"
+VERSION="${SIMPLSEQ_VERSION:-v1.0}"
 TARBALL="simplseq-nf-app-${VERSION}.tar.gz"
 CHECKSUMS="SHA256SUMS.txt"
 DEFAULT_BASE_URL="https://github.com/a-nadeem9/simplseq-nf-app/releases/download/${VERSION}"
@@ -16,6 +16,8 @@ LOG_DIR="${SIMPLSEQ_HOME}/logs"
 BIN_DIR="${HOME}/.local/bin"
 LOG_FILE="${LOG_DIR}/install-${VERSION}.log"
 MICROMAMBA="${SIMPLSEQ_HOME}/bin/micromamba"
+UNAME_S="$(uname -s)"
+UNAME_M="$(uname -m)"
 
 say() {
   printf '\n== %s ==\n' "$1"
@@ -25,7 +27,7 @@ banner() {
   cat <<EOF
 ======================================================
   >_ SIMPLseq-nf App ${VERSION}
-     Linux / WSL browser workflow setup
+     Linux / WSL / macOS browser workflow setup
      Nextflow + Conda/Mamba runtime
 ======================================================
 EOF
@@ -36,15 +38,34 @@ fail() {
   exit 1
 }
 
+case "$UNAME_S" in
+  Linux)
+    PLATFORM_LABEL="Linux / WSL"
+    MAMBA_SUBDIR="linux-64"
+    PROFILE_FILE="${HOME}/.bashrc"
+    SHA256_CHECK=(sha256sum -c)
+    ;;
+  Darwin)
+    PLATFORM_LABEL="macOS"
+    PROFILE_FILE="${HOME}/.zshrc"
+    SHA256_CHECK=(shasum -a 256 -c)
+    case "$UNAME_M" in
+      arm64) MAMBA_SUBDIR="osx-arm64" ;;
+      x86_64) MAMBA_SUBDIR="osx-64" ;;
+      *) fail "Unsupported macOS CPU architecture: $UNAME_M" ;;
+    esac
+    ;;
+  *)
+    fail "This installer supports Linux/WSL and macOS only."
+    ;;
+esac
+
 fetch_asset() {
   local name="$1"
   local target="$2"
   if [[ "$BASE_URL" =~ ^https?:// || "$BASE_URL" =~ ^file:// ]]; then
     if [[ -n "$AUTH_TOKEN" && "$BASE_URL" =~ github.com ]]; then
-      curl -fsSL \
-        -H "Authorization: Bearer ${AUTH_TOKEN}" \
-        -H "Accept: application/octet-stream" \
-        "${BASE_URL%/}/${name}" -o "$target"
+      fetch_github_release_asset "$name" "$target"
     else
       curl -fsSL "${BASE_URL%/}/${name}" -o "$target"
     fi
@@ -53,15 +74,57 @@ fetch_asset() {
   fi
 }
 
-if [[ "$(uname -s)" != "Linux" ]]; then
-  fail "This v0.1-dev installer currently supports Linux/WSL only."
-fi
+fetch_github_release_asset() {
+  local name="$1"
+  local target="$2"
+  local release_path owner repo tag api_url release_json asset_url
+
+  release_path="${BASE_URL#https://github.com/}"
+  owner="${release_path%%/*}"
+  release_path="${release_path#*/}"
+  repo="${release_path%%/*}"
+  tag="${release_path#*releases/download/}"
+  tag="${tag%%/*}"
+
+  [[ -n "$owner" && -n "$repo" && -n "$tag" && "$tag" != "$release_path" ]] \
+    || fail "Cannot parse GitHub release URL for private asset download: $BASE_URL"
+
+  api_url="https://api.github.com/repos/${owner}/${repo}/releases/tags/${tag}"
+  release_json="$(mktemp)"
+  curl -fsSL \
+    -H "Authorization: Bearer ${AUTH_TOKEN}" \
+    -H "Accept: application/vnd.github+json" \
+    "$api_url" -o "$release_json"
+
+  asset_url="$(
+    awk -v asset_name="$name" '
+      BEGIN { RS = "\\{"; FS = "," }
+      index($0, "\"name\":\"" asset_name "\"") || index($0, "\"name\": \"" asset_name "\"") {
+        if (match($0, /\"url\"[[:space:]]*:[[:space:]]*\"[^\"]+\"/)) {
+          s = substr($0, RSTART, RLENGTH)
+          sub(/.*\"url\"[[:space:]]*:[[:space:]]*\"/, "", s)
+          sub(/\"$/, "", s)
+          print s
+          exit
+        }
+      }
+    ' "$release_json"
+  )"
+  rm -f "$release_json"
+
+  [[ -n "$asset_url" ]] || fail "No GitHub release asset found for $name"
+  curl -fsSL \
+        -H "Authorization: Bearer ${AUTH_TOKEN}" \
+        -H "Accept: application/octet-stream" \
+        "$asset_url" -o "$target"
+}
 
 mkdir -p "$CACHE_DIR" "$SIMPLSEQ_HOME/bin" "$SIMPLSEQ_HOME/versions" "$SIMPLSEQ_HOME/envs" "$LOG_DIR" "$BIN_DIR"
 touch "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 banner
+echo "Platform: $PLATFORM_LABEL ($MAMBA_SUBDIR)"
 echo "Base URL: $BASE_URL"
 echo "Install log: $LOG_FILE"
 
@@ -73,7 +136,7 @@ say "Verifying checksum"
 tr -d '\r' < "$CACHE_DIR/$CHECKSUMS" > "$CACHE_DIR/${CHECKSUMS}.unix"
 grep "  ${TARBALL}$" "$CACHE_DIR/${CHECKSUMS}.unix" > "$CACHE_DIR/${TARBALL}.sha256" \
   || fail "No checksum entry found for $TARBALL"
-(cd "$CACHE_DIR" && sha256sum -c "${TARBALL}.sha256")
+(cd "$CACHE_DIR" && "${SHA256_CHECK[@]}" "${TARBALL}.sha256")
 
 say "Installing app files"
 TMP_INSTALL="$(mktemp -d)"
@@ -90,16 +153,8 @@ ln -sfn "$VERSION_DIR" "${SIMPLSEQ_HOME}/current"
 say "Installing micromamba"
 if [[ ! -x "$MICROMAMBA" ]]; then
   MM_TMP="$(mktemp -d)"
-  curl -fsSL "https://micro.mamba.pm/api/micromamba/linux-64/latest" -o "$MM_TMP/micromamba.tar.bz2"
-  python3 - "$MM_TMP" <<'PY'
-import sys
-import tarfile
-from pathlib import Path
-
-tmp = Path(sys.argv[1])
-with tarfile.open(tmp / "micromamba.tar.bz2", "r:bz2") as archive:
-    archive.extractall(tmp)
-PY
+  curl -fsSL "https://micro.mamba.pm/api/micromamba/${MAMBA_SUBDIR}/latest" -o "$MM_TMP/micromamba.tar.bz2"
+  tar -xjf "$MM_TMP/micromamba.tar.bz2" -C "$MM_TMP"
   cp "$MM_TMP/bin/micromamba" "$MICROMAMBA"
   chmod +x "$MICROMAMBA"
   rm -rf "$MM_TMP"
@@ -110,10 +165,20 @@ export MAMBA_ROOT_PREFIX="${SIMPLSEQ_HOME}/mamba_root"
 export CONDA_PKGS_DIRS="${SIMPLSEQ_HOME}/pkgs"
 mkdir -p "$MAMBA_ROOT_PREFIX" "$CONDA_PKGS_DIRS"
 cd "$VERSION_DIR"
-if [[ -x "$ENV_DIR/bin/python" ]]; then
-  "$MICROMAMBA" install -y -p "$ENV_DIR" -f "$VERSION_DIR/environment.yml"
+LOCK_FILE="$VERSION_DIR/locks/linux-64-explicit.txt"
+if [[ "$UNAME_S" == "Linux" && -f "$LOCK_FILE" && "${SIMPLSEQ_USE_LOCK:-1}" != "0" ]]; then
+  if [[ -x "$ENV_DIR/bin/python" ]]; then
+    "$MICROMAMBA" install -y -p "$ENV_DIR" -f "$LOCK_FILE"
+  else
+    "$MICROMAMBA" create -y -p "$ENV_DIR" -f "$LOCK_FILE"
+  fi
+  "$ENV_DIR/bin/python" -m pip install -e "$VERSION_DIR"
 else
-  "$MICROMAMBA" create -y -p "$ENV_DIR" -f "$VERSION_DIR/environment.yml"
+  if [[ -x "$ENV_DIR/bin/python" ]]; then
+    "$MICROMAMBA" install -y -p "$ENV_DIR" -f "$VERSION_DIR/environment.yml"
+  else
+    "$MICROMAMBA" create -y -p "$ENV_DIR" -f "$VERSION_DIR/environment.yml"
+  fi
 fi
 
 say "Creating launcher"
@@ -128,6 +193,7 @@ ENV_DIR="\${SIMPLSEQ_HOME}/envs/\${VERSION}"
 
 export SIMPLSEQ_PROJECT_ROOT="\${PROJECT_ROOT}"
 export SIMPLSEQ_ENV_DIR="\${ENV_DIR}"
+export SIMPLSEQ_VERSION="\${VERSION}"
 export PYTHONPATH="\${PROJECT_ROOT}/src\${PYTHONPATH:+:\${PYTHONPATH}}"
 export PATH="\${ENV_DIR}/bin:\${PATH}"
 
@@ -137,8 +203,9 @@ chmod +x "$BIN_DIR/simplseq"
 
 say "Checking PATH"
 if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
-  if [[ -f "$HOME/.bashrc" ]] && ! grep -q 'SIMPLseq-nf App launcher path' "$HOME/.bashrc"; then
-    cat >> "$HOME/.bashrc" <<'EOF'
+  touch "$PROFILE_FILE"
+  if ! grep -q 'SIMPLseq-nf App launcher path' "$PROFILE_FILE"; then
+    cat >> "$PROFILE_FILE" <<'EOF'
 
 # SIMPLseq-nf App launcher path
 case ":$PATH:" in
@@ -150,6 +217,7 @@ EOF
   echo "$BIN_DIR is not currently on PATH in this shell."
   echo "Open a new shell, or run:"
   echo "  export PATH=\"$BIN_DIR:\$PATH\""
+  echo "PATH update written to: $PROFILE_FILE"
 fi
 
 say "Verifying SIMPLseq"

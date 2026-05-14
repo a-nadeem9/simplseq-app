@@ -6,16 +6,16 @@ SIMPLseq-nf App is started with one command:
 simplseq run
 ```
 
-This opens the browser app. The app lets the user choose FASTQs, review
+This opens the Flask browser app. The app lets the user choose a FASTQ folder, review
 detected pairs, create the sample sheet, start the run, watch progress, and
 download results.
 
 ## Runtime Model
 
-Version 0.1-dev uses a managed Linux runtime under the user's home directory:
+Version 0.1-dev uses a managed runtime under the user's home directory:
 
 ```text
-~/.local/share/simplseq/envs/v0.1.0-dev
+~/.local/share/simplseq/envs/v1.0
 ```
 
 Users do not need to activate an environment manually. The `simplseq` launcher
@@ -24,10 +24,10 @@ internally.
 
 ## First-Time Setup
 
-From Linux or WSL:
+From Linux, WSL, or macOS:
 
 ```bash
-curl -fsSL https://github.com/a-nadeem9/simplseq-nf-app/releases/download/v0.1.0-dev/install-simplseq.sh | bash
+curl -fsSL https://github.com/a-nadeem9/simplseq-nf-app/releases/download/v1.0/install-simplseq.sh | bash
 ```
 
 After setup, this should work from any new WSL/Linux shell:
@@ -45,6 +45,9 @@ source ~/.bashrc
 On Windows, use WSL. Double-click launchers may be added later as convenience
 wrappers, but the tested product path is the `simplseq run` command in WSL.
 
+On macOS, run the same installer from Terminal. The macOS installer path uses
+the same app release and resolves the runtime from `environment.yml`.
+
 ## Normal Use
 
 1. Put paired FASTQ files in `data/`.
@@ -54,7 +57,7 @@ wrappers, but the tested product path is the `simplseq run` command in WSL.
 simplseq run
 ```
 
-3. Choose the FASTQ folder.
+3. Choose the FASTQ folder path.
 4. Write the sample sheet.
 5. Choose an output folder, usually `results`.
 6. Start the run.
@@ -76,6 +79,25 @@ simplseq run-headless --samples samples.csv --out results
 simplseq status --out results
 simplseq results --out results
 ```
+
+## Sample Sheet Naming
+
+The GUI writes absolute FASTQ paths into `samples.csv`. That is intentional:
+Nextflow needs paths it can open directly.
+
+The filename prefix becomes `sample_id`. Optional metadata is filled when the
+name clearly includes participant/date/replicate information, for example:
+
+```text
+Toro142Mar2023Rep1
+Toro142_Rep1_Mar2023
+2023Mar_Toro142_Rep1
+Toro142-2023-03-15-Rep1
+```
+
+If the filename uses another convention, SIMPLseq still writes `sample_id`,
+`fastq_1`, and `fastq_2`; optional metadata columns are left blank instead of
+blocking the run.
 
 ## Outputs
 
@@ -104,6 +126,8 @@ results/input_fastq_md5s.tsv
 ## Current Limits
 
 - Windows runs through WSL.
+- macOS support is wired through the installer, but still needs field testing
+  on real Intel and Apple Silicon Macs before calling it fully supported.
 - Very large datasets may need more RAM than a laptop can provide.
 - Scientific parameters are pinned and recorded; GUI controls should not change
   them silently.
