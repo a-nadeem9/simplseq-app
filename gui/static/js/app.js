@@ -441,7 +441,7 @@ async function startRun() {
     saveSettings();
     text($("#run-message"), payload.dry_run ? "Preview started. Loading command from disk state." : "Run started. Progress will update from disk.");
     $("#run-message").classList.add("ok");
-    setPill($("#run-state-pill"), payload.dry_run ? "Preview" : "Running", "warn");
+    setPill($("#run-state-pill"), payload.dry_run ? "Preview" : "Running", payload.dry_run ? "warn" : "ok");
     lastRunStatus = "starting";
     renderStages([], {status: "starting"}, {status: "starting"});
     setStep("collect", true);
