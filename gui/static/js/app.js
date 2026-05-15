@@ -802,15 +802,26 @@ function renderResultsDashboard(payload, list) {
 }
 
 async function refreshAllRunState() {
+  const previousStatus = lastRunStatus;
   try {
-    const previousStatus = lastRunStatus;
     const status = await refreshStatus();
     latestStatusPayload = status;
-    await refreshProgress(status);
-    await refreshResults();
+    try {
+      await refreshProgress(status);
+    } catch (_error) {
+      // Keep polling even if one progress read races the file writer.
+    }
+    try {
+      await refreshResults();
+    } catch (_error) {
+      // Results may not exist yet while the pipeline is still active.
+    }
     await loadLog({silent: true, statusPayload: status});
     const currentStatus = payloadStatus(status);
     const wasRunning = isActiveStatus(previousStatus);
+    if (isActiveStatus(currentStatus) && !pollTimer) {
+      startPolling();
+    }
     if ((currentStatus === "complete" || currentStatus === "dry_run") && wasRunning) {
       const state = status.state || {};
       const key = `${$("#outdir").value || "results"}:${state.completed_at || currentStatus}`;
@@ -825,13 +836,13 @@ async function refreshAllRunState() {
     }
     lastRunStatus = currentStatus;
     const active = Boolean(status.active);
-    if (!active && pollTimer) {
+    if (!active && !isActiveStatus(currentStatus) && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
     }
     return status;
   } catch (_error) {
-    if (pollTimer) {
+    if (!isActiveStatus(lastRunStatus) && pollTimer) {
       clearInterval(pollTimer);
       pollTimer = null;
     }
@@ -1032,7 +1043,10 @@ async function init() {
     renderCommonPaths([]);
   }
   const status = await refreshAllRunState();
-  if (status?.active) selectTab("run");
+  if (status?.active) {
+    selectTab("run");
+    startPolling();
+  }
 }
 
 init();
