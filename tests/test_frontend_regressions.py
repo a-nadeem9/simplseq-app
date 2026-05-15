@@ -26,3 +26,20 @@ class FrontendRegressionTests(unittest.TestCase):
     def test_disk_running_state_keeps_polling_even_without_process_handle(self):
         refresh_body = re.search(r"async function refreshAllRunState\(\) \{(?P<body>.*?)\n\}", JS, re.S).group("body")
         self.assertIn("if (!active && !isActiveStatus(currentStatus) && pollTimer)", refresh_body)
+
+    def test_native_picker_label_changes_after_dialog_opens(self):
+        choose_body = re.search(r"async function chooseFastqFolder\(\) \{(?P<body>.*?)\n\}", JS, re.S).group("body")
+        self.assertIn('text(button, "Opening...");', choose_body)
+        self.assertIn('text(button, "Waiting...");', choose_body)
+
+    def test_progress_updates_are_tweened_not_hard_set(self):
+        self.assertIn("let displayedProgressPercent = 0;", JS)
+        self.assertIn("function animateProgressTo(percent)", JS)
+        self.assertIn("requestAnimationFrame", JS)
+        render_body = re.search(r"function renderStages\(events, summary, state\) \{(?P<body>.*?)\n\}", JS, re.S).group("body")
+        self.assertIn("animateProgressTo(percent);", render_body)
+
+    def test_running_dot_uses_dedicated_smooth_animation(self):
+        self.assertIn("@keyframes running-dot-pulse", CSS)
+        self.assertRegex(CSS, r"\.pipeline-status\.is-running::before\s*{[^}]*animation:\s*running-dot-pulse")
+        self.assertRegex(CSS, r"\.stage-list li\.running \.stage-dot\s*{[^}]*animation:\s*running-dot-pulse")

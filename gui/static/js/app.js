@@ -29,6 +29,8 @@ let logInFlight = false;
 let latestStatusPayload = null;
 let lastRunStatus = "";
 let completedRedirectKey = "";
+let displayedProgressPercent = 0;
+let progressAnimationFrame = null;
 
 function $(selector) {
   return document.querySelector(selector);
@@ -179,6 +181,45 @@ function stageStatusLabel(status) {
   if (klass === "complete") return "complete";
   if (klass === "failed") return "failed";
   return "pending";
+}
+
+function setProgressDisplay(value) {
+  const percent = Math.max(0, Math.min(100, Math.round(Number(value) || 0)));
+  const progressFill = $("#progress-fill");
+  const globalFill = $("#global-progress-fill");
+  if (progressFill) progressFill.style.width = `${percent}%`;
+  if (globalFill) globalFill.style.width = `${percent}%`;
+  text($("#progress-percent"), `${percent}%`);
+  text($("#pipeline-percent"), `${percent}%`);
+}
+
+function animateProgressTo(percent) {
+  const target = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+  const start = displayedProgressPercent;
+  if (progressAnimationFrame) {
+    cancelAnimationFrame(progressAnimationFrame);
+    progressAnimationFrame = null;
+  }
+  if (Math.abs(target - start) < 1) {
+    displayedProgressPercent = target;
+    setProgressDisplay(target);
+    return;
+  }
+  const duration = Math.min(1400, Math.max(650, Math.abs(target - start) * 42));
+  const startedAt = performance.now();
+  const tick = (now) => {
+    const elapsed = Math.min(1, (now - startedAt) / duration);
+    const eased = 1 - Math.pow(1 - elapsed, 3);
+    setProgressDisplay(start + (target - start) * eased);
+    if (elapsed < 1) {
+      progressAnimationFrame = requestAnimationFrame(tick);
+      return;
+    }
+    displayedProgressPercent = target;
+    progressAnimationFrame = null;
+    setProgressDisplay(target);
+  };
+  progressAnimationFrame = requestAnimationFrame(tick);
 }
 
 function compactTerminalLog(raw, statusPayload) {
@@ -443,6 +484,8 @@ async function startRun() {
     $("#run-message").classList.add("ok");
     setPill($("#run-state-pill"), payload.dry_run ? "Preview" : "Running", payload.dry_run ? "warn" : "ok");
     lastRunStatus = "starting";
+    displayedProgressPercent = 0;
+    setProgressDisplay(0);
     renderStages([], {status: "starting"}, {status: "starting"});
     setStep("collect", true);
     startPolling();
@@ -477,13 +520,16 @@ async function openFallbackFolderBrowser() {
 
 async function chooseFastqFolder() {
   const button = $("#browse-button");
+  const scanButton = $("#scan-button");
   const oldLabel = button ? button.textContent : "";
   if (button) {
     button.disabled = true;
     text(button, "Opening...");
   }
+  if (scanButton && !scanInFlight) scanButton.disabled = true;
   setFolderMessage("Opening folder picker...");
   const pickerHint = setTimeout(() => {
+    if (button) text(button, "Waiting...");
     setFolderMessage("Native folder picker is open. If you do not see it, check behind this browser or on the taskbar/Dock.", "ok");
   }, 1500);
   try {
@@ -505,6 +551,7 @@ async function chooseFastqFolder() {
       button.disabled = false;
       text(button, oldLabel || "Choose folder");
     }
+    if (scanButton && !scanInFlight) scanButton.disabled = false;
   }
 }
 
@@ -561,10 +608,7 @@ function renderStages(events, summary, state) {
     if (runStatus === "complete" || runStatus === "dry_run") bar.classList.add("is-complete");
     if (runStatus === "failed") bar.classList.add("is-failed");
   });
-  if (progressFill) progressFill.style.width = `${percent}%`;
-  if (globalFill) globalFill.style.width = `${percent}%`;
-  text($("#progress-percent"), `${percent}%`);
-  text($("#pipeline-percent"), `${percent}%`);
+  animateProgressTo(percent);
   let pipelineLabel = checkStatusReady() ? "Ready" : "Idle";
   let pipelineClass = checkStatusReady() ? "is-ready" : "is-idle";
   let showPipelinePercent = false;
