@@ -482,20 +482,12 @@ async function chooseFastqFolder() {
     button.disabled = true;
     text(button, "Opening...");
   }
-  setFolderMessage("Opening folder chooser...");
+  setFolderMessage("Opening folder browser...");
   try {
-    const payload = await postJson("/api/select-folder", {initial: $("#fastq-dir").value});
-    if (payload.selected && payload.path) {
-      $("#fastq-dir").value = payload.path;
-      $("#browse-path").value = payload.path;
-      saveSettings();
-      setFolderMessage("Folder selected. Click Scan folder when ready.", "ok");
-      return;
-    }
-    setFolderMessage("Folder selection was cancelled.");
-  } catch (_error) {
-    setFolderMessage("Native folder chooser was not available. Use the in-app folder browser below.", "warn");
     await openFallbackFolderBrowser();
+    setFolderMessage("Choose a folder from the browser, then click Select.", "ok");
+  } catch (error) {
+    setFolderMessage(error.message || "Folder browser could not open.", "warn");
   } finally {
     if (button) {
       button.disabled = false;

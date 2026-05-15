@@ -213,6 +213,11 @@ def windows_to_wsl_path(value: str) -> str:
 
 
 def select_folder_dialog(initial: Path | None = None) -> dict[str, Any]:
+    if os.environ.get("SIMPLSEQ_ENABLE_NATIVE_FOLDER_PICKER") != "1":
+        return {
+            "ok": False,
+            "error": "Native folder picker is disabled. Use the in-app folder browser.",
+        }
     if not is_wsl():
         return {"ok": False, "error": "Native folder picker is only available in WSL for this build."}
     env = os.environ.copy()
@@ -239,7 +244,7 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
-            timeout=600,
+            timeout=8,
             env=env,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
