@@ -213,11 +213,6 @@ def windows_to_wsl_path(value: str) -> str:
 
 
 def select_folder_dialog(initial: Path | None = None) -> dict[str, Any]:
-    if os.environ.get("SIMPLSEQ_ENABLE_NATIVE_FOLDER_PICKER") != "1":
-        return {
-            "ok": False,
-            "error": "Native folder picker is disabled. Use the in-app folder browser.",
-        }
     if not is_wsl():
         return {"ok": False, "error": "Native folder picker is only available in WSL for this build."}
     env = os.environ.copy()
@@ -225,26 +220,40 @@ def select_folder_dialog(initial: Path | None = None) -> dict[str, Any]:
         env["SIMPLSEQ_PICKER_INITIAL"] = wsl_to_windows_path(initial)
     script = r"""
 Add-Type -AssemblyName System.Windows.Forms
+Add-Type -AssemblyName System.Drawing
 [Console]::OutputEncoding = [System.Text.UTF8Encoding]::new()
+[System.Windows.Forms.Application]::EnableVisualStyles()
+
+$owner = New-Object System.Windows.Forms.Form
+$owner.Text = "SIMPLseq folder picker"
+$owner.Size = New-Object System.Drawing.Size(1, 1)
+$owner.StartPosition = "CenterScreen"
+$owner.ShowInTaskbar = $false
+$owner.TopMost = $true
+$owner.Opacity = 0
+$owner.Show()
+$owner.Activate()
+
 $dialog = New-Object System.Windows.Forms.FolderBrowserDialog
 $dialog.Description = "Select the folder containing FASTQ files"
 $dialog.ShowNewFolderButton = $false
 if ($env:SIMPLSEQ_PICKER_INITIAL -and (Test-Path -LiteralPath $env:SIMPLSEQ_PICKER_INITIAL)) {
   $dialog.SelectedPath = $env:SIMPLSEQ_PICKER_INITIAL
 }
-$result = $dialog.ShowDialog()
+$result = $dialog.ShowDialog($owner)
+$owner.Dispose()
 if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
   Write-Output $dialog.SelectedPath
 }
 """
     try:
         completed = subprocess.run(
-            ["powershell.exe", "-NoProfile", "-Sta", "-ExecutionPolicy", "Bypass", "-Command", script],
+            ["powershell.exe", "-NoLogo", "-NoProfile", "-Sta", "-ExecutionPolicy", "Bypass", "-Command", script],
             text=True,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             check=False,
-            timeout=8,
+            timeout=300,
             env=env,
         )
     except (OSError, subprocess.TimeoutExpired) as exc:

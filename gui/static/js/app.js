@@ -482,13 +482,25 @@ async function chooseFastqFolder() {
     button.disabled = true;
     text(button, "Opening...");
   }
-  setFolderMessage("Opening folder browser...");
+  setFolderMessage("Opening Windows folder picker...");
+  const pickerHint = setTimeout(() => {
+    setFolderMessage("Windows folder picker is open. If you do not see it, check behind this browser or on the taskbar.", "ok");
+  }, 1500);
   try {
-    await openFallbackFolderBrowser();
-    setFolderMessage("Choose a folder from the browser, then click Select.", "ok");
+    const payload = await postJson("/api/select-folder", {initial: $("#fastq-dir").value});
+    if (payload.selected && payload.path) {
+      $("#fastq-dir").value = payload.path;
+      $("#browse-path").value = payload.path;
+      saveSettings();
+      setFolderMessage("Folder selected. Click Scan folder when ready.", "ok");
+      return;
+    }
+    setFolderMessage("Folder selection was cancelled.");
   } catch (error) {
-    setFolderMessage(error.message || "Folder browser could not open.", "warn");
+    setFolderMessage("Windows picker was not available. Opening the manual browser instead.", "warn");
+    await openFallbackFolderBrowser();
   } finally {
+    clearTimeout(pickerHint);
     if (button) {
       button.disabled = false;
       text(button, oldLabel || "Choose folder");
