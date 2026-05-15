@@ -181,6 +181,10 @@ def is_wsl() -> bool:
     return "microsoft" in proc_version or "wsl" in proc_version
 
 
+def is_macos() -> bool:
+    return sys.platform == "darwin"
+
+
 def wsl_to_windows_path(path: Path) -> str:
     text = str(path)
     match = re.match(r"^/mnt/([a-zA-Z])(?:/(.*))?$", text)
@@ -212,9 +216,7 @@ def windows_to_wsl_path(value: str) -> str:
     return f"/mnt/{drive}/{rest}" if rest else f"/mnt/{drive}"
 
 
-def select_folder_dialog(initial: Path | None = None) -> dict[str, Any]:
-    if not is_wsl():
-        return {"ok": False, "error": "Native folder picker is only available in WSL for this build."}
+def select_windows_folder_dialog(initial: Path | None = None) -> dict[str, Any]:
     env = os.environ.copy()
     if initial:
         env["SIMPLSEQ_PICKER_INITIAL"] = wsl_to_windows_path(initial)
@@ -265,6 +267,55 @@ if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
     if not selected:
         return {"ok": True, "selected": False}
     return {"ok": True, "selected": True, "path": windows_to_wsl_path(selected), "windows_path": selected}
+
+
+def select_macos_folder_dialog(initial: Path | None = None) -> dict[str, Any]:
+    initial_path = str(initial) if initial and safe_exists(initial) else ""
+    script = r"""
+on run argv
+  set promptText to "Select the folder containing FASTQ files"
+  if (count of argv) > 0 and item 1 of argv is not "" then
+    try
+      set initialAlias to POSIX file (item 1 of argv) as alias
+      set chosenFolder to choose folder with prompt promptText default location initialAlias
+    on error
+      set chosenFolder to choose folder with prompt promptText
+    end try
+  else
+    set chosenFolder to choose folder with prompt promptText
+  end if
+  return POSIX path of chosenFolder
+end run
+"""
+    try:
+        completed = subprocess.run(
+            ["osascript", "-e", script, "--", initial_path],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+            timeout=300,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"ok": False, "error": f"Folder picker could not open: {exc}"}
+    selected = completed.stdout.strip().splitlines()[-1].strip() if completed.stdout.strip() else ""
+    if completed.returncode != 0 and not selected:
+        detail = " ".join(completed.stderr.split())
+        if "User canceled" in detail or "(-128)" in detail:
+            return {"ok": True, "selected": False}
+        return {"ok": False, "error": detail[:220] or "macOS folder picker failed"}
+    if not selected:
+        return {"ok": True, "selected": False}
+    path = selected.rstrip("/") or "/"
+    return {"ok": True, "selected": True, "path": path}
+
+
+def select_folder_dialog(initial: Path | None = None) -> dict[str, Any]:
+    if is_macos():
+        return select_macos_folder_dialog(initial)
+    if is_wsl():
+        return select_windows_folder_dialog(initial)
+    return {"ok": False, "error": "Native folder picker is only available in WSL or macOS for this build."}
 
 
 def common_paths(workspace_root: Path, app_root: Path) -> list[dict[str, str]]:
